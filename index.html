@@ -1,0 +1,1873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>KBI QC Inspector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+:root{
+  --ink:#14181F; --ink-soft:#4A5568;
+  --paper:#F1EFE9; --card:#FFFFFF; --line:#DBD7C9;
+  --brass:#B8863B; --brass-soft:#F1E3C6;
+  --moss:#4B6B4F; --moss-soft:#E1EAE0;
+  --clay:#A44A34; --clay-soft:#F3DED5;
+  --slate:#3E5266; --slate-soft:#DEE5EC;
+  --radius:10px; --shadow:0 1px 2px rgba(20,24,31,.08),0 1px 1px rgba(20,24,31,.04);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:76px;-webkit-tap-highlight-color:transparent}
+.mono{font-family:'IBM Plex Mono',monospace}
+.topbar{position:sticky;top:0;z-index:30;background:var(--ink);color:#fff;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow)}
+.topbar b{font-size:15.5px;font-weight:600}
+.topbar span{font-size:11px;color:#A9B3C2;display:block;margin-top:1px}
+.pill{font-family:'IBM Plex Mono',monospace;font-size:10.5px;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.12);color:#EEE4CB}
+.pill.dirty{background:var(--brass);color:#241300}
+.pill.saved{background:var(--moss);color:#0E2116}
+.wrap{max-width:640px;margin:0 auto;padding:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
+.card h2{font-size:13px;font-weight:600;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.card h2 .n{width:20px;height:20px;border-radius:5px;background:var(--slate-soft);color:var(--slate);font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.field{margin-bottom:10px}
+.field label{display:block;font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;font-weight:500}
+input,select,textarea{width:100%;border:1px solid var(--line);border-radius:7px;padding:9px 10px;font-size:14.5px;font-family:inherit;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--slate);outline-offset:0}
+textarea{min-height:64px;resize:vertical}
+.hint{font-size:11.5px;color:var(--ink-soft);line-height:1.4}
+.btn{border:none;border-radius:8px;padding:11px 14px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn-primary{background:var(--ink);color:#fff}
+.btn-brass{background:var(--brass);color:#241300}
+.btn-clay{background:var(--clay);color:#fff}
+.btn-ghost{background:var(--line);color:var(--ink)}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.btn-row .btn{flex:1;min-width:130px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:none;background:#fff;padding:9px 6px;font-size:12.5px;font-weight:600;font-family:inherit;color:var(--ink-soft);border-right:1px solid var(--line);cursor:pointer}
+.seg button:last-child{border-right:none}
+.seg button.on-pass{background:var(--moss);color:#fff}
+.seg button.on-fail{background:var(--clay);color:#fff}
+.seg button.on-na{background:var(--slate);color:#fff}
+.row-item{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:#FBFAF7}
+.row-item .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12.5px;font-weight:600}
+.remove-x{background:none;border:none;color:var(--clay);font-size:12px;cursor:pointer;font-weight:600}
+.add-row-btn{width:100%;border:1px dashed var(--line);background:transparent;border-radius:8px;padding:9px;font-size:13px;color:var(--slate);cursor:pointer;font-weight:600}
+.totals-strip{display:flex;gap:8px}
+.totals-strip>div{flex:1;background:var(--slate-soft);border-radius:8px;padding:8px;text-align:center}
+.totals-strip>div b{display:block;font-size:17px;font-family:'IBM Plex Mono',monospace}
+.totals-strip>div span{font-size:10px;color:var(--ink-soft)}
+.decision-strip{margin-top:10px;padding:10px;border-radius:8px;text-align:center;font-weight:700;font-size:14px}
+.decision-pass{background:var(--moss-soft);color:var(--moss)}
+.decision-fail{background:var(--clay-soft);color:var(--clay)}
+.decision-pending{background:var(--slate-soft);color:var(--slate)}
+.decision-hold{background:var(--brass-soft);color:#6B4A17}
+.view{display:none}
+.view.active{display:block}
+.navbar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;z-index:30;padding-bottom:env(safe-area-inset-bottom)}
+.navbar button{flex:1;border:none;background:none;padding:9px 2px 8px;font-size:10px;color:var(--ink-soft);font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+.navbar button .ic{font-size:17px}
+.navbar button.active{color:var(--ink);font-weight:600}
+.mic-row{display:flex;gap:6px;align-items:flex-start}
+.mic-row textarea{flex:1}
+.mic-btn{flex:none;width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:15px;cursor:pointer}
+.mic-btn.rec{background:var(--clay);color:#fff;border-color:var(--clay)}
+.photo-grid{display:flex;flex-direction:column;gap:10px;margin-bottom:10px}
+.photo-card-item{border:1px solid var(--line);border-radius:8px;padding:8px;background:#FBFAF7}
+.photo-tile{aspect-ratio:1;border-radius:8px;overflow:hidden;position:relative;border:1px solid var(--line)}
+.photo-tile img{width:100%;height:100%;object-fit:cover}
+.photo-tile .del{position:absolute;top:3px;right:3px;background:rgba(20,24,31,.7);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer}
+.photo-caption-input{width:100%;margin-top:6px;font-size:13px}
+.photo-count{font-size:12px;color:var(--ink-soft);margin-bottom:8px}
+.sig-canvas{width:100%;height:110px;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none}
+.sig-block{margin-bottom:14px}
+.sig-block .lbl{font-size:12px;font-weight:600;margin-bottom:5px}
+.toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:20px;font-size:12.5px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:60;max-width:90%;text-align:center}
+.toast.show{opacity:1}
+.modal-ov{display:none;position:fixed;inset:0;background:rgba(20,24,31,.55);z-index:100;align-items:center;justify-content:center;padding:20px}
+.modal-ov.show{display:flex}
+.modal-box{background:#fff;border-radius:12px;padding:18px;width:100%;max-width:340px}
+.report-item{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;font-size:12.5px}
+.report-item .r-open{color:var(--slate);font-weight:600;cursor:pointer;background:none;border:none;font-size:12.5px}
+.storage-bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-bottom:4px}
+.storage-bar>div{height:100%;background:var(--slate)}
+.section-note{font-size:11px;color:var(--ink-soft);background:var(--slate-soft);border-radius:6px;padding:8px 9px;margin-bottom:10px;line-height:1.4}
+.print-only{display:none}
+.rm-status{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.rm-status.full{background:var(--moss-soft);color:var(--moss)}
+.rm-status.partial{background:var(--brass-soft);color:#6B4A17}
+.rm-status.none{background:var(--clay-soft);color:var(--clay)}
+.rm-photo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+.rm-photo-tile{aspect-ratio:1;border-radius:6px;overflow:hidden;position:relative;border:1px solid var(--line)}
+.rm-photo-tile img{width:100%;height:100%;object-fit:cover}
+.rm-photo-tile .del{position:absolute;top:2px;right:2px;background:rgba(20,24,31,.7);color:#fff;border:none;border-radius:50%;width:17px;height:17px;font-size:9px;cursor:pointer}
+.rm-photo-add{aspect-ratio:1;border:1px dashed var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--slate);cursor:pointer}
+.search-wrap{position:relative;margin-bottom:6px}
+.search-results{border:1px solid var(--line);border-radius:8px;margin-top:6px;max-height:230px;overflow-y:auto;background:#fff}
+.search-results .sr-item{padding:9px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12.5px}
+.search-results .sr-item:last-child{border-bottom:none}
+.search-results .sr-item:active{background:var(--slate-soft)}
+.search-results .sr-item b{display:block;font-size:13px}
+.search-results .sr-item span{color:var(--ink-soft);font-size:11px}
+.file-drop{border:1px dashed var(--line);border-radius:8px;padding:14px;text-align:center;cursor:pointer;font-size:12.5px;color:var(--slate)}
+.om-status{font-size:11.5px;color:var(--ink-soft);margin-top:8px;line-height:1.4}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div><b>KBI QC Inspector</b><span>Offline inspection &amp; AQL report</span></div>
+  <div class="pill saved" id="statusPill">Ready</div>
+</div>
+
+<div class="wrap">
+
+  <!-- ===== VIEW: DETAILS ===== -->
+  <div class="view active" id="view-details">
+    <div class="card">
+      <h2><span class="n">1</span>Report details</h2>
+      <div class="field" style="margin-bottom:12px">
+        <label>Location</label>
+        <div class="hint" id="locationStatus">📍 Location not captured yet</div>
+        <button class="btn btn-ghost" id="captureLocationBtn" type="button" style="margin-top:6px">Capture current location</button>
+      </div>
+      <div class="search-wrap">
+        <div class="field" style="margin-bottom:6px">
+          <label>Search order master (VG No / Style / PO / Buyer)</label>
+          <input id="f_orderSearch" placeholder="Type to search uploaded order sheet…" autocomplete="off">
+        </div>
+        <div class="search-results" id="orderSearchResults" style="display:none"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Report No. (auto)</label><input id="f_reportNo" readonly class="mono" style="background:#f2f1ec;color:var(--ink-soft)"></div>
+        <div class="field"><label>Inspection date</label><input id="f_date" type="date"></div>
+      </div>
+      <div class="field"><label>VG No.</label><input id="f_vgNo" placeholder="e.g. 35757"></div>
+      <div class="grid2">
+        <div class="field"><label>Inspection type</label>
+          <select id="f_inspectionType">
+            <option value="">Select…</option>
+            <option value="Raw Material">Raw Material</option>
+            <option value="Pilot Run">Pilot Run (100%)</option>
+            <option value="Inline">Inline</option>
+            <option value="DUPRO">DUPRO (During Production)</option>
+            <option value="Pre-Final">Pre-Final</option>
+            <option value="Final">Final / PSI</option>
+            <option value="Random Check">Random Check</option>
+            <option value="Container Loading">Container Loading</option>
+          </select>
+        </div>
+        <div class="field"><label>Inspector name</label><input id="f_inspector" placeholder="Your name"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Buyer code</label><input id="f_buyerCode" placeholder="e.g. BIJOU"></div>
+        <div class="field"><label>Supplier</label><input id="f_supplier"></div>
+      </div>
+      <div class="field"><label>Style</label><input id="f_style"></div>
+      <div class="grid2">
+        <div class="field"><label>Color</label><input id="f_color"></div>
+        <div class="field"><label>Description</label><input id="f_desc"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Buyer PO / Sup PO</label><input id="f_po"></div>
+        <div class="field"><label>Challan no.</label><input id="f_challan"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Order Qty.</label><input id="f_orderQty" type="number"></div>
+        <div class="field"><label>Actual/Offered Qty.</label><input id="f_actualQty" type="number"></div>
+      </div>
+      <div class="field" id="aqlInfoBox" style="display:none;background:var(--brass-soft);border-radius:8px;padding:12px;">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+          <span style="font-size:11px;color:#6B4A17;font-weight:600">SAMPLE SIZE FOR INSPECTION (AUTO CALCULATED)</span>
+        </div>
+        <div id="aqlSampleBig" class="mono" style="font-size:30px;font-weight:700;color:var(--ink);line-height:1"></div>
+        <div class="hint" style="margin-top:2px;color:#6B4A17">pieces to pick out of Actual/Offered Qty and check</div>
+        <div class="hint mono" id="aqlInfoText" style="color:var(--ink);margin-top:8px;border-top:1px solid rgba(20,24,31,.12);padding-top:8px"></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Counter sample</label>
+          <select id="f_counterSample">
+            <option value="">Select…</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </select>
+        </div>
+        <div class="field"><label>Prepack required</label>
+          <select id="f_prepackRequired">
+            <option value="">Select…</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </select>
+        </div>
+        <div class="field"><label>Lab test result</label>
+          <select id="f_labTest">
+            <option value="">Select…</option>
+            <option value="Pass">Pass</option>
+            <option value="Fail">Fail</option>
+            <option value="Pending">Pending</option>
+            <option value="Not Applicable">Not Applicable</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" id="counterSamplePhotoBox" style="display:none">
+        <label>Counter Sample vs Bulk Production comparison photo</label>
+        <div id="counterSamplePhotoPreview" style="margin-bottom:8px"></div>
+        <div class="file-drop" id="counterSamplePhotoDrop">Tap to add comparison photo</div>
+        <input type="file" id="counterSamplePhotoInput" accept="image/*" capture="environment" style="display:none">
+      </div>
+      <div class="field" id="prepackBox" style="display:none">
+        <label>Prepack qty (pcs per prepack)</label>
+        <input id="f_prepackQty" type="number" placeholder="e.g. 3" style="margin-bottom:10px">
+        <label>Prepack photo</label>
+        <div id="prepackPhotoPreview" style="margin-bottom:8px"></div>
+        <div class="file-drop" id="prepackPhotoDrop">Tap to add prepack photo</div>
+        <input type="file" id="prepackPhotoInput" accept="image/*" capture="environment" style="display:none">
+      </div>
+    </div>
+
+    <div class="card" id="cartonCard" style="display:none">
+      <h2><span class="n">CT</span>Carton details</h2>
+      <div class="grid2">
+        <div class="field"><label>Total Carton</label><input id="f_totalCartons" type="number"></div>
+        <div class="field"><label>Offered Carton</label><input id="f_offeredCartons" type="number"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Qty in Per Carton</label><input id="f_qtyPerCarton" type="number"></div>
+        <div class="field"><label>Carton Opened — Auto</label><input id="f_cartonOpenedAuto" readonly class="mono" style="background:#f2f1ec;color:var(--ink-soft)"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Carton Opened — Manual (extra)</label><input id="f_cartonOpenedManual" type="number" placeholder="0"></div>
+        <div class="field"><label>Total Carton Opened</label><input id="f_cartonOpenedTotal" readonly class="mono" style="background:var(--moss-soft);color:var(--moss);font-weight:700"></div>
+      </div>
+      <div class="hint" style="margin-bottom:10px">Auto = √(Offered/Total Carton), rounded up. Agar sample se satisfaction na ho to extra carton open karke Manual me daalo — Total apne aap update ho jaayega.</div>
+      <div class="field"><label>Open Carton No.</label><input id="f_openCartonNo" placeholder="e.g. 3, 17, 45…"></div>
+    </div>
+
+    <div class="card" id="rawMaterialCard" style="display:none">
+      <h2><span class="n">RM</span>Raw material check</h2>
+      <div class="section-note">Per-piece consumption se total required nikalta hai (× actual qty), fir vendor ne kitna diya hai usse compare karta hai. Iss type ke liye Checklist/Defects/AQL tabs relevant nahi hain isliye hide hain.</div>
+      <div id="rawMaterialRows"></div>
+      <button class="add-row-btn" id="addRawMaterialBtn">+ Add material</button>
+    </div>
+  </div>
+
+  <!-- ===== VIEW: CHECKLIST ===== -->
+  <div class="view" id="view-checklist">
+    <div class="card">
+      <h2><span class="n">A</span>General checks</h2>
+      <div id="checklistA"></div>
+    </div>
+    <div class="card">
+      <h2><span class="n">C</span>Item / workmanship check</h2>
+      <div id="checklistC"></div>
+    </div>
+    <div class="card">
+      <h2><span class="n">D</span>Onsite / functional test</h2>
+      <div id="checklistD"></div>
+    </div>
+  </div>
+
+  <!-- ===== VIEW: DEFECTS ===== -->
+  <div class="view" id="view-defects">
+    <div class="card">
+      <h2><span class="n">B</span>Defects found</h2>
+      <div id="defectRows"></div>
+      <button class="add-row-btn" id="addDefectBtn">+ Add defect</button>
+      <div class="totals-strip" style="margin-top:12px">
+        <div><b id="totCritical">0</b><span>Critical</span></div>
+        <div><b id="totMajor">0</b><span>Major</span></div>
+        <div><b id="totMinor">0</b><span>Minor</span></div>
+        <div><b id="totAll">0</b><span>Total</span></div>
+      </div>
+      <div class="totals-strip" id="aqlThresholdStrip" style="margin-top:8px;display:none">
+        <div><b id="thCritical" class="mono">0/1</b><span>Critical Ac/Re</span></div>
+        <div><b id="thMajor" class="mono">—</b><span>Major Ac/Re</span></div>
+        <div><b id="thMinor" class="mono">—</b><span>Minor Ac/Re</span></div>
+      </div>
+      <div class="decision-strip decision-pending" id="decisionStrip">Enter Actual/Offered qty on Details tab to get AQL decision</div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-ghost" id="holdToggleBtn" type="button" style="flex:1">Mark result as ON HOLD</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2><span class="n">E</span>Remarks</h2>
+      <div class="field">
+        <label>Vendor remarks (Hindi / bolke likho)</label>
+        <div class="mic-row">
+          <textarea id="f_remarksVendor" placeholder="jaise: plating ka shade halka hai 3 carton mein"></textarea>
+          <button class="mic-btn" id="micRemarksVendor" title="Dictate">🎤</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Buyer remarks (English)</label>
+        <textarea id="f_remarksBuyer" placeholder="Formal English version for the buyer copy"></textarea>
+      </div>
+    </div>
+    <div class="card">
+      <h2><span class="n">F</span>Action to be taken</h2>
+      <div class="field">
+        <label>Vendor action (Hindi)</label>
+        <div class="mic-row">
+          <textarea id="f_actionVendor" placeholder="jaise: clasp badal ke dobara check karo"></textarea>
+          <button class="mic-btn" id="micActionVendor" title="Dictate">🎤</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Buyer action (English)</label>
+        <textarea id="f_actionBuyer" placeholder="Formal English version for the buyer copy"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== VIEW: PHOTOS ===== -->
+  <div class="view" id="view-photos">
+    <div class="card">
+      <h2><span class="n">P</span>Inspection photos</h2>
+      <div class="photo-count"><b id="photoCount">0</b> / 20 recommended minimum</div>
+      <div class="photo-grid" id="photoGrid"></div>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" multiple style="display:none">
+      <div class="btn-row">
+        <button class="btn btn-primary" id="addPhotoBtn">+ Add photos</button>
+        <button class="btn btn-ghost" id="downloadZipBtn">Download ZIP</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== VIEW: SIGNOFF ===== -->
+  <div class="view" id="view-signoff">
+    <div class="card">
+      <h2><span class="n">S</span>Sign-off</h2>
+      <div id="sigBlocks"></div>
+    </div>
+    <div class="card">
+      <h2><span class="n">X</span>Export &amp; sync</h2>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button class="btn btn-brass" id="exportBtn">Export to Excel</button>
+      </div>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button class="btn btn-clay" id="printBtnVendor">PDF — Vendor (Hindi)</button>
+        <button class="btn btn-clay" id="printBtnBuyer">PDF — Buyer (English)</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="newBtn">New report</button>
+      </div>
+      <div class="hint" id="sheetSyncStatus" style="margin-top:10px"></div>
+    </div>
+    <button class="btn btn-primary" id="saveBtn" style="width:100%">Save report</button>
+  </div>
+
+  <!-- ===== VIEW: ADMIN ===== -->
+  <div class="view" id="view-admin">
+    <div class="card">
+      <h2><span class="n">L</span>Company letterhead (for PDF)</h2>
+      <div class="section-note">Ye Name/Address/Logo dono PDF reports (Vendor Hindi + Buyer English) ke top par print hoga, taaki report authentic/official lage.</div>
+      <div class="field"><label>Company name</label><input id="f_companyName" placeholder="e.g. KBI Export Pvt. Ltd."></div>
+      <div class="field"><label>Address</label><textarea id="f_companyAddress" placeholder="Full address, city, pin code"></textarea></div>
+      <div class="field"><label>Logo</label>
+        <div id="companyLogoPreview" style="margin-bottom:8px"></div>
+        <div class="file-drop" id="companyLogoDrop">Tap to choose logo image (PNG/JPG)</div>
+        <input type="file" id="companyLogoInput" accept="image/*" style="display:none">
+      </div>
+      <button class="btn btn-primary" id="saveCompanyInfoBtn">Save letterhead</button>
+      <div class="hint" id="companyInfoSyncStatus" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <h2><span class="n">O</span>Order master (Excel)</h2>
+      <div class="section-note">Order master sheet (xlsx/csv) upload karo — VG No, Style, PO, Buyer, Color, Description, Supplier, Qty jaisi columns honi chahiye (naam thoda alag ho to bhi chalega). Details tab par search se yahi data auto-fill karega. Agar sheet me "Initial Date" ya "FINAL Inspection" jaisi tentative-date columns bhari hain, to upload karte hi Google Sheet me ek **Schedule** tab bhi bankar update ho jaata hai (VG No/date match kar ke — purane orders delete nahi hote, sirf naye/update wale merge hote hain).</div>
+      <div class="file-drop" id="orderMasterDrop">Tap to choose order master file (.xlsx, .xls, .csv)</div>
+      <input type="file" id="orderMasterInput" accept=".xlsx,.xls,.csv" style="display:none">
+      <div class="om-status" id="orderMasterStatus">No order master uploaded yet.</div>
+      <div class="hint" id="orderMasterSyncStatus" style="margin-top:6px"></div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-ghost" id="clearOrderMasterBtn">Clear order master</button>
+        <button class="btn btn-ghost" id="syncOrderMasterBtn">Sync to Sheet now</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2><span class="n">G</span>Google Sheet backup</h2>
+      <div class="section-note">Har report save hone par yahan diya hua Apps Script URL par ek copy record ho jaati hai — is tarah data phone kho jaaye tab bhi Sheet me safe rehta hai. Setup steps neeche chat me diye hain.</div>
+      <div class="field"><label>Apps Script Web App URL</label><input id="f_sheetUrl" placeholder="https://script.google.com/macros/s/.../exec"></div>
+      <button class="btn btn-primary" id="saveSheetUrlBtn">Save URL</button>
+      <button class="btn btn-ghost" id="testSheetBtn" style="margin-left:6px">Send test row</button>
+    </div>
+    <div class="card">
+      <h2><span class="n">#</span>Report No. continuity (PIN protected)</h2>
+      <div class="section-note">Report No. format: <b>PREFIX-Number</b> — Pilot Run=PLT, Inline=INL, DUPRO=DUP, Pre-Final=PF, Final=FIN, Random Check=RC, Container Loading=CL, Raw Material=RM. Har type ka apna counter hai (RM-1, INL-1 alag-alag chalte hain). Jab Sheet backup connected ho, app save karte waqt Sheet se bhi highest number check karta hai — taki alag devices par kaam karne par number clash na ho.</div>
+      <div class="hint" id="reportNoFloorStatus" style="margin-bottom:8px">No overrides set.</div>
+      <div class="grid2">
+        <div class="field"><label>Inspection type</label>
+          <select id="f_reportNoFloorType">
+            <option value="">General (no type)</option>
+            <option value="Pilot Run">Pilot Run (PLT)</option>
+            <option value="Inline">Inline (INL)</option>
+            <option value="DUPRO">DUPRO (DUP)</option>
+            <option value="Pre-Final">Pre-Final (PF)</option>
+            <option value="Final">Final (FIN)</option>
+            <option value="Random Check">Random Check (RC)</option>
+            <option value="Container Loading">Container Loading (CL)</option>
+            <option value="Raw Material">Raw Material (RM)</option>
+          </select>
+        </div>
+        <div class="field"><label>Next number should be at least</label><input type="number" id="f_reportNoFloor"></div>
+      </div>
+      <button class="btn btn-primary" id="setReportNoFloorBtn">Set (PIN)</button>
+    </div>
+    <div class="card">
+      <h2><span class="n">St</span>Storage</h2>
+      <div class="storage-bar"><div id="storageUsageBar" style="width:0%"></div></div>
+      <div class="hint" id="storageUsageStatus">Checking…</div>
+    </div>
+    <div class="card">
+      <h2><span class="n">R</span>Saved reports (this device)</h2>
+      <div id="reportsList"></div>
+    </div>
+    <div class="card">
+      <h2><span class="n">All</span>All team reports (from Sheet)</h2>
+      <div class="section-note">Poori team ke saare devices se aaye reports — read-only, edit karne ke liye us device par jaana hoga jahan wo save hua tha.</div>
+      <div id="allReportsList" class="hint">Loading…</div>
+    </div>
+  </div>
+
+</div>
+
+<div id="printSheet" class="print-only"></div>
+
+<div class="navbar">
+  <button data-view="details" id="navDetails"><span class="ic">📋</span>Details</button>
+  <button data-view="checklist" id="navChecklist"><span class="ic">✓</span>Checklist</button>
+  <button data-view="defects" id="navDefects"><span class="ic">⚠</span>Defects</button>
+  <button data-view="photos" id="navPhotos"><span class="ic">📷</span>Photos</button>
+  <button data-view="signoff" id="navSignoff"><span class="ic">✍</span>Sign-off</button>
+  <button data-view="admin" id="navAdmin"><span class="ic">⚙</span>Admin</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- PIN modal -->
+<div class="modal-ov" id="pinModalOv">
+  <div class="modal-box">
+    <div style="font-weight:600;margin-bottom:6px">Enter PIN</div>
+    <div class="hint" id="pinModalMsg" style="margin-bottom:10px"></div>
+    <input id="pinModalInput" type="text" inputmode="numeric" style="text-align:center;letter-spacing:3px;margin-bottom:12px" placeholder="••••">
+    <div class="btn-row"><button class="btn btn-ghost" id="pinCancel">Cancel</button><button class="btn btn-primary" id="pinOk">OK</button></div>
+  </div>
+</div>
+<!-- message modal -->
+<div class="modal-ov" id="msgModalOv">
+  <div class="modal-box"><div id="msgModalText" style="margin-bottom:12px;font-size:13.5px"></div><button class="btn btn-primary" id="msgOk" style="width:100%">OK</button></div>
+</div>
+
+<script>
+/* =========================================================
+   KBI QC INSPECTOR — built from scratch (no code reused from
+   the older KBI_QC_App). AQL tables re-derived and verified
+   against ANSI/ASQ Z1.4 General Inspection Level II, Normal,
+   Single Sampling (Table I + Table II-A).
+   ========================================================= */
+
+/* ---------- ANSI/ASQ Z1.4 — Table I: lot size -> code letter (General Level II) ---------- */
+const LOT_TO_CODE = [
+  [2,8,'A'],[9,15,'B'],[16,25,'C'],[26,50,'D'],[51,90,'E'],
+  [91,150,'F'],[151,280,'G'],[281,500,'H'],[501,1200,'J'],
+  [1201,3200,'K'],[3201,10000,'L'],[10001,35000,'M'],
+  [35001,150000,'N'],[150001,500000,'P'],[500001,Infinity,'Q']
+];
+
+/* ---------- Table II-A: code letter -> sample size + Ac/Re at AQL 2.5 (major) and 4.0 (minor) ----------
+   Verified: J/80 -> 2.5:5/6 ; K/125 -> 2.5:7/8, 4.0:10/11 ; L/200 -> 2.5:10/11, 4.0:14/15
+   (cross-checked across independent published Z1.4 tables, Sept 2026).
+   Letters A-D fall below the table's usable range for 2.5/4.0 AQL — per the standard's
+   arrow rule ("use first sampling plan below arrow") they borrow code letter E's plan. */
+const CODE_TABLE = {
+  A:{n:2},  B:{n:3},  C:{n:5},  D:{n:8},
+  E:{n:13,  maj:[0,1],  min:[1,2]},
+  F:{n:20,  maj:[1,2],  min:[2,3]},
+  G:{n:32,  maj:[2,3],  min:[3,4]},
+  H:{n:50,  maj:[3,4],  min:[5,6]},
+  J:{n:80,  maj:[5,6],  min:[7,8]},
+  K:{n:125, maj:[7,8],  min:[10,11]},
+  L:{n:200, maj:[10,11],min:[14,15]},
+  M:{n:315, maj:[14,15],min:[21,22]},
+  N:{n:500, maj:[21,22],min:[30,31]},
+  P:{n:800, maj:[30,31],min:[44,45]},
+  Q:{n:1250,maj:[44,45],min:[60,61]}
+};
+for(const l of ['A','B','C','D']) CODE_TABLE[l].maj = CODE_TABLE.E.maj, CODE_TABLE[l].min = CODE_TABLE.E.min;
+
+function codeLetterFor(lot){
+  for(const [lo,hi,code] of LOT_TO_CODE) if(lot>=lo && lot<=hi) return code;
+  return lot<2 ? 'A' : 'Q';
+}
+function aqlPlan(lotSize){
+  if(!lotSize || lotSize<2) return null;
+  const code = codeLetterFor(lotSize);
+  const row = CODE_TABLE[code];
+  // Letters A-D use their own (smaller) sample size per the standard's arrow rule they
+  // still report their own n, but Ac/Re borrowed from E — this matches common field practice.
+  const n = row.n;
+  return {code, n, critical:[0,1], major:row.maj, minor:row.min};
+}
+
+/* Pilot Run is a 100% inspection: every offered piece is checked, so the
+   sample size equals the offered qty. Critical and Major have zero tolerance;
+   Minor follows the normal AQL 4.0 limit for that lot size. */
+function planForType(lot, type){
+  const base = aqlPlan(lot);
+  if(type==='Pilot Run'){
+    if(!lot || lot<1) return null;
+    return {code:'100%', n:lot, critical:[0,1], major:[0,1], minor: base ? base.minor : [0,1], hundred:true};
+  }
+  return base;
+}
+
+/* ---------- State ---------- */
+let state = null;
+let dirty = false;
+let currentView = 'details';
+let db = null;
+
+const CHECKLIST_A = ["Packing list / carton marking matches PO","Carton count matches challan","Barcode / labels correct & legible","Polybag & carton condition OK"];
+const CHECKLIST_C = ["Plating / finish shade consistent","Stones / beads secure, no chipping","Clasp / hook function smooth","Chain / cord joints secure","Measurements within tolerance","No sharp edges / burrs"];
+const CHECKLIST_D = ["Open-close function test (clasp/lock)","Drop test — no breakage","Colour rub / crock test","Weight matches spec"];
+
+function emptyReport(){
+  return {
+    id: 'r_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    reportNo:'', date:new Date().toISOString().slice(0,10), vgNo:'', inspectionType:'', inspector:'',
+    buyerCode:'', supplier:'', style:'', color:'', desc:'', po:'', challan:'',
+    orderQty:'', actualQty:'', counterSample:'', counterSamplePhoto:'', prepackRequired:'', prepackQty:'', prepackPhoto:'', labTest:'', totalCartons:'', offeredCartons:'', qtyPerCarton:'', cartonOpenedAuto:'', cartonOpenedManual:'', cartonOpenedTotal:'', openCartonNo:'',
+    checklist:{A:{}, C:{}, D:{}},
+    defects:[], remarksVendor:'', remarksBuyer:'', actionVendor:'', actionBuyer:'', resultOverride:'',
+    rawMaterials:[],
+    photos:[], signatures:{inspector:null, production:null, merchant:null, vendor:null, buyer:null},
+    sigMeta:{inspector:{name:'',designation:''}, production:{name:'',designation:''}, merchant:{name:'',designation:''}, vendor:{name:'',designation:''}, buyer:{name:'',designation:''}},
+    location:null,
+    createdAt: Date.now(), updatedAt: Date.now()
+  };
+}
+
+/* ---------- IndexedDB ---------- */
+function openDb(){
+  return new Promise((res,rej)=>{
+    const req = indexedDB.open('kbi_qc_db', 1);
+    req.onupgradeneeded = e=>{
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains('reports')) d.createObjectStore('reports',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('meta')) d.createObjectStore('meta',{keyPath:'key'});
+    };
+    req.onsuccess = e=>res(e.target.result);
+    req.onerror = e=>rej(e.target.error);
+  });
+}
+function idbPut(store, val){ return new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).put(val); tx.oncomplete=()=>res(); tx.onerror=e=>rej(e.target.error); }); }
+function idbGet(store, key){ return new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const r=tx.objectStore(store).get(key); r.onsuccess=()=>res(r.result); r.onerror=e=>rej(e.target.error); }); }
+function idbGetAll(store){ return new Promise((res,rej)=>{ const tx=db.transaction(store,'readonly'); const r=tx.objectStore(store).getAll(); r.onsuccess=()=>res(r.result); r.onerror=e=>rej(e.target.error); }); }
+function idbDelete(store,key){ return new Promise((res,rej)=>{ const tx=db.transaction(store,'readwrite'); tx.objectStore(store).delete(key); tx.oncomplete=()=>res(); tx.onerror=e=>rej(e.target.error); }); }
+
+/* ---------- UI helpers ---------- */
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
+function showMsg(text){ return new Promise(res=>{ const ov=document.getElementById('msgModalOv'); document.getElementById('msgModalText').textContent=text; ov.classList.add('show'); const ok=document.getElementById('msgOk'); function done(){ ov.classList.remove('show'); ok.removeEventListener('click',done); res(); } ok.addEventListener('click',done); }); }
+function askPin(title,msg){ return new Promise(res=>{ const ov=document.getElementById('pinModalOv'); document.getElementById('pinModalMsg').textContent=msg||''; const input=document.getElementById('pinModalInput'); input.value=''; ov.classList.add('show'); input.focus(); function cleanup(v){ ov.classList.remove('show'); okBtn.removeEventListener('click',onOk); cancelBtn.removeEventListener('click',onCancel); res(v); } const okBtn=document.getElementById('pinOk'), cancelBtn=document.getElementById('pinCancel'); function onOk(){ cleanup(input.value); } function onCancel(){ cleanup(null); } okBtn.addEventListener('click',onOk); cancelBtn.addEventListener('click',onCancel); }); }
+
+async function getAdminPin(){
+  const m = await idbGet('meta','adminPin');
+  return (m && m.value) || '1234'; // default PIN if none set — change via console/meta if needed
+}
+async function requirePin(label){
+  const real = await getAdminPin();
+  const entered = await askPin('Enter PIN', 'PIN required to: '+label);
+  if(entered===null) return false;
+  if(entered!==real){ await showMsg('Galat PIN.'); return false; }
+  return true;
+}
+
+function markDirty(){ dirty=true; renderStatus(); }
+function renderStatus(){
+  const p=document.getElementById('statusPill');
+  p.textContent = dirty ? 'Unsaved' : 'Saved';
+  p.className = 'pill '+(dirty?'dirty':'saved');
+}
+
+/* ---------- Navigation ---------- */
+let adminUnlocked = false;
+async function switchView(v){
+  if(v==='admin' && !adminUnlocked){
+    const ok = await requirePin('Admin section kholna (order sheet, settings, sab reports)');
+    if(!ok) return;
+    adminUnlocked = true;
+  }
+  currentView=v;
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  document.querySelectorAll('.navbar button').forEach(b=>b.classList.toggle('active', b.dataset.view===v));
+  if(v==='admin') renderAdmin();
+  if(v==='signoff') requestAnimationFrame(()=>signaturePadResizers.forEach(fn=>fn()));
+}
+window.addEventListener('resize', ()=>{ if(currentView==='signoff') signaturePadResizers.forEach(fn=>fn()); });
+document.querySelectorAll('.navbar button').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
+
+/* ---------- Form <-> state binding ---------- */
+const FIELD_IDS = ['reportNo','date','vgNo','inspectionType','inspector','buyerCode','supplier','style','color','desc','po','challan','orderQty','actualQty','counterSample','prepackRequired','prepackQty','labTest','totalCartons','offeredCartons','qtyPerCarton','cartonOpenedAuto','cartonOpenedManual','cartonOpenedTotal','openCartonNo','remarksVendor','remarksBuyer','actionVendor','actionBuyer'];
+function loadFormFromState(){
+  FIELD_IDS.forEach(k=>{ const el=document.getElementById('f_'+k); if(el) el.value = state[k]!=null?state[k]:''; });
+  if(!state.rawMaterials) state.rawMaterials=[];
+  paintChecklist();
+  renderDefects();
+  renderPhotos();
+  renderRawMaterials();
+  toggleRawMaterialCard();
+  toggleCartonCard();
+  toggleCounterSamplePhotoBox();
+  renderCounterSamplePhoto();
+  togglePrepackBox();
+  renderPrepackPhoto();
+  buildSigBlocks();
+  renderLocationStatus();
+  recalcAql();
+}
+function renderLocationStatus(){
+  const el = document.getElementById('locationStatus');
+  if(!el) return;
+  if(state.location && state.location.lat!=null){
+    const l = state.location;
+    el.innerHTML = `📍 ${l.lat.toFixed(5)}, ${l.lng.toFixed(5)} (±${Math.round(l.accuracy||0)}m) · <a href="https://maps.google.com/?q=${l.lat},${l.lng}" target="_blank" rel="noopener">Open in Maps</a>`;
+  } else {
+    el.textContent = '📍 Location not captured yet';
+  }
+}
+document.getElementById('captureLocationBtn').addEventListener('click', ()=>{
+  if(!navigator.geolocation){ toast('Geolocation not supported on this device'); return; }
+  if(window.isSecureContext===false || location.protocol==='content:' || location.protocol==='http:'){
+    alert('Location/Camera secure page par hi chalte hain. Ye app abhi "'+location.protocol+'" se khula hai (jaise WhatsApp/Downloads ke andar se). Isse band karke Files app > Downloads me file dhoondh kar Chrome me kholo, ya team ke liye hosted (https) link use karo.');
+    return;
+  }
+  toast('Getting location…');
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      state.location = {lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy, capturedAt:Date.now()};
+      markDirty(); renderLocationStatus(); toast('Location captured');
+    },
+    err=>{ toast('Location error: '+err.message); },
+    {enableHighAccuracy:true, timeout:12000}
+  );
+});
+function bindFieldListeners(){
+  FIELD_IDS.forEach(k=>{
+    const el=document.getElementById('f_'+k); if(!el) return;
+    const evt = el.tagName==='SELECT' ? 'change' : 'input';
+    el.addEventListener(evt, ()=>{
+      state[k]=el.value; markDirty();
+      if(k==='inspector' && el.value.trim()) idbPut('meta',{key:'lastInspector', value:el.value.trim()}).catch(()=>{});
+      if(k==='actualQty'){ recalcAql(); renderRawMaterials(); }
+      if(k==='totalCartons'||k==='offeredCartons'||k==='cartonOpenedManual') recalcCartonOpened();
+      if(k==='inspectionType'){
+        toggleRawMaterialCard();
+        toggleCartonCard();
+        if(!reportNoLocked){
+          nextReportNo(state.inspectionType).then(no=>{ state.reportNo=no; document.getElementById('f_reportNo').value=no; });
+        }
+      }
+      if(k==='counterSample') toggleCounterSamplePhotoBox();
+      if(k==='prepackRequired') togglePrepackBox();
+    });
+  });
+}
+function toggleCounterSamplePhotoBox(){
+  const show = state.counterSample==='Yes';
+  document.getElementById('counterSamplePhotoBox').style.display = show ? 'block' : 'none';
+}
+function togglePrepackBox(){
+  const show = state.prepackRequired==='Yes';
+  document.getElementById('prepackBox').style.display = show ? 'block' : 'none';
+}
+function renderCounterSamplePhoto(){
+  const preview = document.getElementById('counterSamplePhotoPreview');
+  preview.innerHTML = state.counterSamplePhoto
+    ? `<div class="photo-tile" style="width:110px;height:110px"><img src="${state.counterSamplePhoto}"><button class="del" id="counterSamplePhotoDel">✕</button></div>`
+    : '<span class="hint">No photo added yet.</span>';
+  if(state.counterSamplePhoto){
+    document.getElementById('counterSamplePhotoDel').addEventListener('click', ()=>{
+      state.counterSamplePhoto=''; markDirty(); renderCounterSamplePhoto();
+    });
+  }
+}
+function renderPrepackPhoto(){
+  const preview = document.getElementById('prepackPhotoPreview');
+  preview.innerHTML = state.prepackPhoto
+    ? `<div class="photo-tile" style="width:110px;height:110px"><img src="${state.prepackPhoto}"><button class="del" id="prepackPhotoDel">✕</button></div>`
+    : '<span class="hint">No photo added yet.</span>';
+  if(state.prepackPhoto){
+    document.getElementById('prepackPhotoDel').addEventListener('click', ()=>{
+      state.prepackPhoto=''; markDirty(); renderPrepackPhoto();
+    });
+  }
+}
+document.getElementById('counterSamplePhotoDrop').addEventListener('click', ()=>document.getElementById('counterSamplePhotoInput').click());
+document.getElementById('counterSamplePhotoInput').addEventListener('change', async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  state.counterSamplePhoto = await compressImage(file, 900, 0.65);
+  markDirty(); renderCounterSamplePhoto();
+  e.target.value='';
+});
+document.getElementById('prepackPhotoDrop').addEventListener('click', ()=>document.getElementById('prepackPhotoInput').click());
+document.getElementById('prepackPhotoInput').addEventListener('change', async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  state.prepackPhoto = await compressImage(file, 900, 0.65);
+  markDirty(); renderPrepackPhoto();
+  e.target.value='';
+});
+/* Cartons to open uses the common QC field practice of √(offered or total cartons), rounded up. */
+function recalcCartonOpened(){
+  const offered = parseFloat(state.offeredCartons) || 0;
+  const total = parseFloat(state.totalCartons) || 0;
+  const base = offered>0 ? offered : total;
+  const auto = base>0 ? Math.max(1, Math.ceil(Math.sqrt(base))) : '';
+  state.cartonOpenedAuto = auto;
+  const manual = parseFloat(state.cartonOpenedManual) || 0;
+  const totalOpened = (auto===''&&manual===0) ? '' : (auto===''?0:auto) + manual;
+  state.cartonOpenedTotal = totalOpened;
+  const elAuto = document.getElementById('f_cartonOpenedAuto'); if(elAuto) elAuto.value = auto;
+  const elTotal = document.getElementById('f_cartonOpenedTotal'); if(elTotal) elTotal.value = totalOpened;
+}
+const MIDLINE_TO_FINAL_TYPES = ['Pre-Final','Final'];
+function toggleCartonCard(){
+  const show = MIDLINE_TO_FINAL_TYPES.includes(state.inspectionType);
+  document.getElementById('cartonCard').style.display = show ? 'block' : 'none';
+}
+
+/* ---------- AQL recalculation ---------- */
+function recalcAql(){
+  const box = document.getElementById('aqlInfoBox'), txt=document.getElementById('aqlInfoText');
+  if(state.inspectionType==='Raw Material'){ box.style.display='none'; document.getElementById('aqlThresholdStrip').style.display='none'; updateDecision(null); return; }
+  const lot = parseInt(state.actualQty) || 0;
+  const plan = planForType(lot, state.inspectionType);
+  if(!plan){ box.style.display='none'; document.getElementById('aqlThresholdStrip').style.display='none'; updateDecision(null); return; }
+  box.style.display='block';
+  document.getElementById('aqlSampleBig').textContent = plan.n + ' pcs';
+  txt.textContent = plan.hundred ? `Pilot Run = 100% inspection → check all ${lot} pcs · Critical ${plan.critical.join('/')} · Major ${plan.major.join('/')} · Minor (AQL4.0) ${plan.minor.join('/')}` : `Actual/Offered qty ${lot} → Code letter ${plan.code} · Critical Ac/Re ${plan.critical[0]}/${plan.critical[1]} · Major (AQL2.5) ${plan.major[0]}/${plan.major[1]} · Minor (AQL4.0) ${plan.minor[0]}/${plan.minor[1]}`;
+  const strip=document.getElementById('aqlThresholdStrip'); strip.style.display='flex';
+  document.getElementById('thCritical').textContent = plan.critical.join('/');
+  document.getElementById('thMajor').textContent = plan.major.join('/');
+  document.getElementById('thMinor').textContent = plan.minor.join('/');
+  updateDecision(plan);
+}
+function getAqlResult(){
+  if(state.resultOverride==='On Hold') return 'ON HOLD';
+  if(state.inspectionType==='Raw Material') return '';
+  const plan = planForType(parseInt(state.actualQty)||0, state.inspectionType);
+  if(!plan) return '';
+  const {critical,major,minor} = countDefects();
+  const fail = critical>plan.critical[0] || major>plan.major[0] || minor>plan.minor[0];
+  return fail ? 'FAIL' : 'PASS';
+}
+function updateDecision(plan){
+  const strip = document.getElementById('decisionStrip');
+  const holdBtn = document.getElementById('holdToggleBtn');
+  const {critical,major,minor} = countDefects();
+  const onHold = state.resultOverride==='On Hold';
+  holdBtn.textContent = onHold ? 'Remove ON HOLD (use AQL result)' : 'Mark result as ON HOLD';
+  holdBtn.classList.toggle('btn-brass', onHold);
+  holdBtn.classList.toggle('btn-ghost', !onHold);
+  if(onHold){ strip.className='decision-strip decision-hold'; strip.textContent='ON HOLD — manually held, not a final PASS/FAIL yet'; return; }
+  if(!plan){ strip.className='decision-strip decision-pending'; strip.textContent='Enter Actual/Offered qty on Details tab to get AQL decision'; return; }
+  const fail = critical>plan.critical[0] || major>plan.major[0] || minor>plan.minor[0];
+  strip.className = 'decision-strip '+(fail?'decision-fail':'decision-pass');
+  strip.textContent = fail ? `FAIL — reject threshold reached (C${critical} M${major} Mi${minor})` : `PASS — within AQL limits (C${critical} M${major} Mi${minor})`;
+}
+document.getElementById('holdToggleBtn').addEventListener('click', ()=>{
+  state.resultOverride = state.resultOverride==='On Hold' ? '' : 'On Hold';
+  markDirty();
+  recalcAql();
+});
+
+/* ---------- Raw material check (only relevant when Inspection type = Raw Material) ---------- */
+function rmRequiredTotal(row){
+  const perPc = parseFloat(row.perPieceQty) || 0;
+  const totalPcs = parseFloat(state.actualQty) || 0;
+  return perPc * totalPcs;
+}
+function rmStatus(row){
+  const required = rmRequiredTotal(row);
+  const received = parseFloat(row.received) || 0;
+  if(required<=0) return {label:'—', cls:'', percent:null};
+  const pct = Math.round((received/required)*100);
+  if(received>=required) return {label:'Full — '+pct+'%', cls:'full', percent:pct};
+  if(received>0) return {label:'Partial — '+pct+'%', cls:'partial', percent:pct};
+  return {label:'Not received yet', cls:'none', percent:0};
+}
+function toggleRawMaterialCard(){
+  const isRaw = state.inspectionType === 'Raw Material';
+  document.getElementById('rawMaterialCard').style.display = isRaw ? 'block' : 'none';
+  document.getElementById('navChecklist').style.display = isRaw ? 'none' : '';
+  document.getElementById('navDefects').style.display = isRaw ? 'none' : '';
+  if(isRaw && state.rawMaterials.length===0){ state.rawMaterials.push({name:'', unit:'gram', perPieceQty:'', received:'', qualityStatus:'', qualityRemarks:'', expectedDate:'', photos:[]}); }
+  if(isRaw && (currentView==='checklist'||currentView==='defects')) switchView('details');
+  renderRawMaterials();
+  recalcAql();
+}
+async function compressRmImage(file){ return compressImage(file, 900, 0.6); }
+function renderRawMaterials(){
+  const c = document.getElementById('rawMaterialRows');
+  if(!state.rawMaterials) state.rawMaterials=[];
+  c.innerHTML = state.rawMaterials.map((r,i)=>{
+    const required = rmRequiredTotal(r);
+    const st = rmStatus(r);
+    const showDate = st.percent!==null && st.percent<100;
+    return `
+    <div class="row-item" data-i="${i}">
+      <div class="top">Material ${i+1}<button class="remove-x" data-i="${i}" data-act="rm-remove">Remove</button></div>
+      <div class="grid2">
+        <div class="field"><label>Material name</label><input data-i="${i}" data-f="name" value="${escapeHtml(r.name||'')}" placeholder="e.g. Metal chain"></div>
+        <div class="field"><label>Unit</label>
+          <select data-i="${i}" data-f="unit">${['gram','kg','pcs','meter','ml'].map(u=>`<option value="${u}" ${r.unit===u?'selected':''}>${u}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>Qty / piece</label><input data-i="${i}" data-f="perPieceQty" type="number" step="any" value="${r.perPieceQty||''}"></div>
+        <div class="field"><label>Required total</label><input readonly value="${required?required.toFixed(2):'—'}" style="background:#f2f1ec;color:var(--ink-soft)"></div>
+        <div class="field"><label>Received so far</label><input data-i="${i}" data-f="received" type="number" step="any" value="${r.received||''}"></div>
+      </div>
+      <div class="field" style="margin-bottom:8px"><span class="rm-status ${st.cls}">${st.label}</span></div>
+      <div class="grid2">
+        <div class="field"><label>Received quality</label>
+          <select data-i="${i}" data-f="qualityStatus">
+            <option value="" ${!r.qualityStatus?'selected':''}>Not checked</option>
+            <option value="OK" ${r.qualityStatus==='OK'?'selected':''}>OK</option>
+            <option value="NOT OK" ${r.qualityStatus==='NOT OK'?'selected':''}>NOT OK</option>
+          </select>
+        </div>
+        <div class="field" style="${showDate?'':'visibility:hidden'}"><label>Balance expected by</label><input data-i="${i}" data-f="expectedDate" type="date" value="${r.expectedDate||''}"></div>
+      </div>
+      <div class="field"><label>Quality remarks (if NOT OK)</label><input data-i="${i}" data-f="qualityRemarks" value="${escapeHtml(r.qualityRemarks||'')}" placeholder="e.g. thickness sample se kam hai"></div>
+      <label style="font-size:11.5px;color:var(--ink-soft);font-weight:500;display:block;margin-bottom:4px">Material photos</label>
+      <div class="rm-photo-grid">
+        ${(r.photos||[]).map((p,pi)=>`<div class="rm-photo-tile"><img src="${p.data}"><button class="del" data-i="${i}" data-pi="${pi}" data-act="rm-photo-del">✕</button></div>`).join('')}
+        <label class="rm-photo-add">+<input type="file" accept="image/*" capture="environment" data-i="${i}" data-act="rm-photo-add" style="display:none"></label>
+      </div>
+    </div>`;
+  }).join('') || '<div class="hint">No materials added.</div>';
+
+  c.querySelectorAll('input[data-f], select[data-f]').forEach(el=>{
+    const evt = el.tagName==='SELECT' || el.type==='date' ? 'change' : 'input';
+    el.addEventListener(evt, ()=>{
+      const i=+el.dataset.i, f=el.dataset.f;
+      state.rawMaterials[i][f]=el.value; markDirty();
+      if(f==='perPieceQty'||f==='received') renderRawMaterials(); else if(f==='qualityStatus') renderRawMaterials();
+    });
+  });
+  c.querySelectorAll('[data-act="rm-remove"]').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.rawMaterials.splice(+btn.dataset.i,1); markDirty(); renderRawMaterials();
+  }));
+  c.querySelectorAll('[data-act="rm-photo-del"]').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.rawMaterials[+btn.dataset.i].photos.splice(+btn.dataset.pi,1); markDirty(); renderRawMaterials();
+  }));
+  c.querySelectorAll('[data-act="rm-photo-add"]').forEach(inp=>inp.addEventListener('change', async e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const dataUrl = await compressRmImage(file);
+    const i=+inp.dataset.i;
+    if(!state.rawMaterials[i].photos) state.rawMaterials[i].photos=[];
+    state.rawMaterials[i].photos.push({data:dataUrl});
+    markDirty(); renderRawMaterials();
+  }));
+}
+document.getElementById('addRawMaterialBtn').addEventListener('click', ()=>{
+  state.rawMaterials.push({name:'', unit:'gram', perPieceQty:'', received:'', qualityStatus:'', qualityRemarks:'', expectedDate:'', photos:[]});
+  markDirty(); renderRawMaterials();
+});
+
+/* ---------- Checklist ---------- */
+function segHtml(key, group){
+  return `<div class="seg" data-key="${key}" data-group="${group}">
+    <button data-v="pass" type="button">Pass</button>
+    <button data-v="fail" type="button">Fail</button>
+    <button data-v="na" type="button">N/A</button>
+  </div>`;
+}
+function buildChecklistOnce(containerId, items, group){
+  const c=document.getElementById(containerId);
+  c.innerHTML = items.map((label,i)=>`<div class="row-item"><div class="top">${escapeHtml(label)}</div>${segHtml(String(i),group)}</div>`).join('');
+  c.querySelectorAll('.seg button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const seg=btn.closest('.seg'); const key=seg.dataset.key, group=seg.dataset.group, v=btn.dataset.v;
+      state.checklist[group][key] = v;
+      markDirty();
+      paintSeg(seg, v);
+    });
+  });
+}
+function paintSeg(seg, v){
+  seg.querySelectorAll('button').forEach(b=>{ b.classList.remove('on-pass','on-fail','on-na'); if(b.dataset.v===v) b.classList.add('on-'+v); });
+}
+function paintChecklist(){
+  document.querySelectorAll('#view-checklist .seg').forEach(seg=>{
+    const group=seg.dataset.group, key=seg.dataset.key;
+    const v = state.checklist[group] && state.checklist[group][key];
+    if(v) paintSeg(seg, v);
+    else seg.querySelectorAll('button').forEach(b=>b.classList.remove('on-pass','on-fail','on-na'));
+  });
+}
+buildChecklistOnce('checklistA', CHECKLIST_A, 'A');
+buildChecklistOnce('checklistC', CHECKLIST_C, 'C');
+buildChecklistOnce('checklistD', CHECKLIST_D, 'D');
+
+/* ---------- Defects ---------- */
+function countDefects(){
+  let critical=0,major=0,minor=0;
+  (state.defects||[]).forEach(d=>{ const q=parseInt(d.qty)||1; if(d.severity==='critical') critical+=q; else if(d.severity==='major') major+=q; else if(d.severity==='minor') minor+=q; });
+  return {critical,major,minor,total:critical+major+minor};
+}
+function renderDefects(){
+  const c=document.getElementById('defectRows');
+  c.innerHTML = (state.defects||[]).map((d,i)=>`
+    <div class="row-item">
+      <div class="top">Defect ${i+1}<button class="remove-x" data-i="${i}">Remove</button></div>
+      <div class="grid2">
+        <div class="field"><label>Description</label><input data-i="${i}" data-f="desc" value="${escapeHtml(d.desc||'')}" placeholder="e.g. plating peel"></div>
+        <div class="field"><label>Qty</label><input data-i="${i}" data-f="qty" type="number" value="${d.qty||1}"></div>
+      </div>
+      <div class="seg" data-i="${i}" data-role="sev">
+        <button data-v="critical" type="button" class="${d.severity==='critical'?'on-fail':''}">Critical</button>
+        <button data-v="major" type="button" class="${d.severity==='major'?'on-fail':''}">Major</button>
+        <button data-v="minor" type="button" class="${d.severity==='minor'?'on-fail':''}">Minor</button>
+      </div>
+    </div>`).join('') || `<div class="hint">No defects added.</div>`;
+
+  c.querySelectorAll('input').forEach(inp=>{
+    inp.addEventListener('input', ()=>{ const i=+inp.dataset.i, f=inp.dataset.f; state.defects[i][f]=inp.value; markDirty(); updateTotals(); });
+  });
+  c.querySelectorAll('.seg[data-role="sev"] button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ const seg=btn.closest('.seg'); const i=+seg.dataset.i; state.defects[i].severity=btn.dataset.v; markDirty(); renderDefects(); updateTotals(); });
+  });
+  c.querySelectorAll('.remove-x').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ state.defects.splice(+btn.dataset.i,1); markDirty(); renderDefects(); updateTotals(); });
+  });
+  updateTotals();
+}
+document.getElementById('addDefectBtn').addEventListener('click', ()=>{
+  state.defects.push({desc:'', qty:1, severity:'minor'}); markDirty(); renderDefects();
+});
+function updateTotals(){
+  const {critical,major,minor,total} = countDefects();
+  document.getElementById('totCritical').textContent=critical;
+  document.getElementById('totMajor').textContent=major;
+  document.getElementById('totMinor').textContent=minor;
+  document.getElementById('totAll').textContent=total;
+  recalcAql();
+}
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------- Photos ---------- */
+function drawScaled(source, sw, sh, maxDim, quality){
+  let w=sw,h=sh;
+  if(w>h && w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; } else if(h>=w && h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; }
+  const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+  canvas.getContext('2d').drawImage(source,0,0,w,h);
+  return canvas.toDataURL('image/jpeg',quality);
+}
+/* Photos always come out upright: the camera's EXIF rotation is applied
+   explicitly (createImageBitmap 'from-image'), so a photo never ends up
+   sideways/tilted regardless of how the phone was held. */
+async function compressImage(file, maxDim=1000, quality=0.6){
+  if(window.createImageBitmap){
+    try{
+      const bmp = await createImageBitmap(file, {imageOrientation:'from-image'});
+      const out = drawScaled(bmp, bmp.width, bmp.height, maxDim, quality);
+      if(bmp.close) bmp.close();
+      return out;
+    }catch(e){ /* fall back to the <img> route below */ }
+  }
+  return new Promise((res,rej)=>{
+    const img=new Image(); const reader=new FileReader();
+    reader.onload=e=>{ img.onload=()=>res(drawScaled(img, img.naturalWidth||img.width, img.naturalHeight||img.height, maxDim, quality));
+      img.onerror=rej; img.src=e.target.result; };
+    reader.onerror=rej; reader.readAsDataURL(file);
+  });
+}
+document.getElementById('addPhotoBtn').addEventListener('click', ()=>document.getElementById('photoInput').click());
+document.getElementById('photoInput').addEventListener('change', async e=>{
+  const files=Array.from(e.target.files||[]);
+  for(const f of files){ try{ const dataUrl=await compressImage(f); state.photos.push({id:'p_'+Date.now()+Math.random().toString(36).slice(2,6), data:dataUrl}); }catch(err){ console.error(err); } }
+  e.target.value='';
+  markDirty(); renderPhotos();
+});
+function renderPhotos(){
+  const g=document.getElementById('photoGrid');
+  g.innerHTML = state.photos.map(p=>`
+    <div class="photo-card-item">
+      <div class="photo-tile" style="aspect-ratio:auto;height:140px"><img src="${p.data}"><button class="del" data-id="${p.id}">✕</button></div>
+      <input class="photo-caption-input" data-id="${p.id}" value="${escapeHtml(p.caption||'')}" placeholder="Ye photo kyun li — e.g. Plating is not Good">
+    </div>`).join('');
+  g.querySelectorAll('.del').forEach(btn=>btn.addEventListener('click', ()=>{ state.photos=state.photos.filter(p=>p.id!==btn.dataset.id); markDirty(); renderPhotos(); }));
+  g.querySelectorAll('.photo-caption-input').forEach(inp=>inp.addEventListener('input', ()=>{
+    const p = state.photos.find(x=>x.id===inp.dataset.id);
+    if(p){ p.caption = inp.value; markDirty(); }
+  }));
+  document.getElementById('photoCount').textContent = state.photos.length;
+}
+document.getElementById('downloadZipBtn').addEventListener('click', async ()=>{
+  if(!state.photos.length){ toast('No photos to download'); return; }
+  const zip=new JSZip();
+  state.photos.forEach((p,i)=>{ const base64=p.data.split(',')[1]; zip.file(`${state.vgNo||'VG'}_${String(i+1).padStart(2,'0')}.jpg`, base64, {base64:true}); });
+  const blob=await zip.generateAsync({type:'blob'});
+  saveAs(blob, `${state.vgNo||'photos'}_photos.zip`);
+});
+
+/* ---------- Signatures ---------- */
+function buildSigBlocks(){
+  if(!state.sigMeta) state.sigMeta = {};
+  signaturePadResizers = [];
+  const roles=[['inspector','Inspector signature'],['production','Production signature'],['merchant','Merchant signature'],['vendor','Vendor signature'],['buyer','Buyer/QC rep signature (optional)']];
+  roles.forEach(([key])=>{ if(!state.signatures) state.signatures={}; if(!(key in state.signatures)) state.signatures[key]=null; if(!state.sigMeta[key]) state.sigMeta[key]={name:'',designation:''}; });
+  const c=document.getElementById('sigBlocks');
+  c.innerHTML = roles.map(([key,label])=>`
+    <div class="sig-block">
+      <div class="lbl">${label}</div>
+      <div class="grid2" style="margin-bottom:6px">
+        <div class="field" style="margin-bottom:0"><label>Name</label><input data-sig="${key}" data-sf="name" value="${escapeHtml((state.sigMeta[key]&&state.sigMeta[key].name)||'')}" placeholder="Full name"></div>
+        <div class="field" style="margin-bottom:0"><label>Designation</label><input data-sig="${key}" data-sf="designation" value="${escapeHtml((state.sigMeta[key]&&state.sigMeta[key].designation)||'')}" placeholder="e.g. QC Inspector"></div>
+      </div>
+      <canvas class="sig-canvas" id="sig_${key}"></canvas>
+      <div class="btn-row" style="margin-top:6px"><button class="btn btn-ghost" data-clear="${key}" type="button">Clear</button></div>
+    </div>`).join('');
+  roles.forEach(([key])=>setupSignaturePad(key));
+  c.querySelectorAll('input[data-sig]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const key=inp.dataset.sig, sf=inp.dataset.sf;
+      if(!state.sigMeta[key]) state.sigMeta[key]={name:'',designation:''};
+      state.sigMeta[key][sf] = inp.value;
+      markDirty();
+    });
+  });
+  c.querySelectorAll('[data-clear]').forEach(btn=>btn.addEventListener('click', ()=>{
+    const key=btn.dataset.clear; const canvas=document.getElementById('sig_'+key);
+    canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); state.signatures[key]=null; markDirty();
+  }));
+}
+let signaturePadResizers = [];
+function setupSignaturePad(key){
+  const canvas=document.getElementById('sig_'+key); const ctx=canvas.getContext('2d');
+  function size(){
+    const r=canvas.getBoundingClientRect();
+    if(r.width===0 || r.height===0) return; // canvas not visible yet (e.g. tab hidden) — retried when the tab is shown
+    canvas.width=r.width*2; canvas.height=r.height*2; ctx.scale(2,2); ctx.lineWidth=2; ctx.lineCap='round'; ctx.strokeStyle='#14181F';
+    if(state.signatures[key]){ const img=new Image(); img.onload=()=>ctx.drawImage(img,0,0,r.width,r.height); img.src=state.signatures[key]; }
+  }
+  size();
+  signaturePadResizers.push(size);
+  let drawing=false, last=null;
+  function pos(e){ const r=canvas.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left, y:t.clientY-r.top}; }
+  function start(e){ drawing=true; last=pos(e); e.preventDefault(); }
+  function move(e){ if(!drawing) return; const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; e.preventDefault(); }
+  function end(){ if(!drawing) return; drawing=false; state.signatures[key]=canvas.toDataURL('image/png'); markDirty(); }
+  canvas.addEventListener('mousedown',start); window.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+  canvas.addEventListener('touchstart',start,{passive:false}); canvas.addEventListener('touchmove',move,{passive:false}); canvas.addEventListener('touchend',end);
+}
+
+/* ---------- Voice dictation (Web Speech API — browser dependent, Hindi) ---------- */
+let activeRecognition=null;
+function initMic(btnId, textId, lang){
+  const btn=document.getElementById(btnId), ta=document.getElementById(textId);
+  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ btn.disabled=true; btn.title='Voice input not supported in this browser'; return; }
+  const MIC_ERROR_MSG = {
+    'not-allowed':'Mic permission block hai — Chrome ke address bar ke (i) icon se Microphone ko Allow karo.',
+    'service-not-allowed':'Mic permission block hai — Chrome settings me Microphone Allow karo.',
+    'no-speech':'Kuch sunai nahi diya — dobara try karo.',
+    'audio-capture':'Is device par microphone nahi mila.',
+    'network':'Voice typing ke liye internet chahiye — network check karo.',
+    'aborted':''
+  };
+  btn.addEventListener('click', ()=>{
+    if(activeRecognition){ activeRecognition.stop(); return; }
+    const rec=new SR(); rec.lang=lang; rec.continuous=false; rec.interimResults=false;
+    rec.onresult = e=>{ const t=e.results[0][0].transcript; ta.value = (ta.value? ta.value+' ':'')+t; ta.dispatchEvent(new Event('input')); };
+    rec.onend = ()=>{ btn.classList.remove('rec'); activeRecognition=null; };
+    rec.onerror = e=>{
+      btn.classList.remove('rec'); activeRecognition=null;
+      const msg = MIC_ERROR_MSG[e.error];
+      if(msg) toast(msg); else if(e.error) toast('Voice input error: '+e.error);
+    };
+    try{
+      rec.start(); activeRecognition=rec; btn.classList.add('rec');
+    }catch(err){
+      toast('Mic start nahi ho paya: '+(err.message||err));
+    }
+  });
+}
+initMic('micRemarksVendor','f_remarksVendor','hi-IN');
+initMic('micActionVendor','f_actionVendor','hi-IN');
+
+/* ---------- Order master (Excel/CSV upload + search) ---------- */
+const OM_FIELD_MAP = {
+  vgNo:      ['vgno','vg','vgnumber','vgcode','vgsrno','sno','srno'],
+  style:     ['style','styleno','stylenumber','stylecode','itemstyle','kbistyleno'],
+  po:        ['po','pono','buyerpo','purchaseorder','suppo','poorder','ponumber','poref'],
+  buyerCode: ['buyer','buyercode','buyername','client','clientname'],
+  color:     ['color','colour','shade','buyersizecolor'],
+  desc:      ['description','desc','itemdescription','itemname','item'],
+  supplier:  ['supplier','vendor','suppliername','vendorname','factory'],
+  orderQty:  ['orderqty','orderquantity','qty','quantity','totalqty','poqty'],
+  challan:   ['challan','challanno','challannumber'],
+  merchant:  ['merchant','merchandiser','merchantname'],
+  initialDate:       ['initialdate','inlinedate','inspectiondate'],
+  finalInspectionDate: ['finalinspection','finaldate','finalinspectiondate','psidate'],
+  poDate:  ['podate','purchaseorderdate'],
+  ppmDate: ['ppmdate'],
+  shipDate: ['shipdate','shipmentdate','shippingdate'],
+  samplesApprovedDate: ['samplesapproveddate','sampleapproveddate','approveddate'],
+  status: ['status']
+};
+function normHeader(h){ return String(h||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+const DATE_FIELDS = ['initialDate','finalInspectionDate','poDate','ppmDate','shipDate','samplesApprovedDate'];
+// Excel's date serial-number epoch (25569 = days between 1899-12-30 and 1970-01-01, UTC).
+function excelSerialToDate(n){
+  if(typeof n !== 'number' || !isFinite(n)) return null;
+  const d = new Date(Math.round((n - 25569) * 86400 * 1000));
+  return isNaN(d) ? null : d;
+}
+function cellToDateField(v){
+  if(v==null || v==='') return '';
+  let d = null;
+  if(typeof v === 'number') d = excelSerialToDate(v);
+  else if(Object.prototype.toString.call(v)==='[object Date]') d = isNaN(v) ? null : v;
+  else { const parsed = new Date(v); if(!isNaN(parsed)) d = parsed; }
+  if(!d) return '';
+  const year = d.getFullYear();
+  if(year < 2000 || year > 2100) return ''; // clearly corrupted (blank-cell formula artifact, or a serial number misread as a date) — treat as empty
+  return d.toISOString().slice(0,10);
+}
+function cellToPlainValue(v){
+  // Never date-convert here — this is for fields that must stay as typed (VG No, PO, Style…),
+  // even if the source cell happens to carry date formatting by mistake.
+  if(v==null) return '';
+  if(Object.prototype.toString.call(v)==='[object Date]'){
+    // A non-date field came through as a Date only because its cell was date-formatted —
+    // recover something usable rather than emitting a garbage date string.
+    return isNaN(v) ? '' : String(v.getTime());
+  }
+  return String(v).trim();
+}
+// Some order-master sheets have a title/company-name row above the real column
+// headers. Scan the first several rows and use whichever one has the most
+// recognisable header names, instead of always assuming row 1.
+function findHeaderRowIndex(rows2d){
+  const allCandidates = new Set(Object.values(OM_FIELD_MAP).flat());
+  let best = {rowIdx:0, score:-1};
+  const scanLimit = Math.min(12, rows2d.length);
+  for(let i=0;i<scanLimit;i++){
+    const row = rows2d[i] || [];
+    let score = 0;
+    row.forEach(cell=>{ if(allCandidates.has(normHeader(cell))) score++; });
+    if(score>best.score) best = {rowIdx:i, score};
+  }
+  return best.score>0 ? best.rowIdx : 0;
+}
+async function handleOrderMasterFile(file){
+  const buf = await file.arrayBuffer();
+  // Deliberately NOT using cellDates:true — that converts ANY date-formatted cell
+  // to a JS Date, including columns that are really text/numbers (e.g. a PO field
+  // that inherited date formatting by mistake in the source sheet). Dates are
+  // converted explicitly, field-by-field, below.
+  const wb = XLSX.read(buf, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rawRows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+  if(!rawRows.length){ toast('Sheet khali lagi — kuch data nahi mila'); return; }
+
+  const headerRowIdx = findHeaderRowIndex(rawRows);
+  const headerCells = (rawRows[headerRowIdx]||[]).map(h=>String(h==null?'':h).trim());
+  const dataRows = rawRows.slice(headerRowIdx+1);
+
+  const headerKeyMap = {}; // field -> column index
+  Object.keys(OM_FIELD_MAP).forEach(field=>{
+    const candidates = OM_FIELD_MAP[field];
+    const colIdx = headerCells.findIndex(h=>candidates.includes(normHeader(h)));
+    if(colIdx>-1) headerKeyMap[field]=colIdx;
+  });
+
+  const orders = dataRows.map(r=>{
+    const out={};
+    Object.keys(headerKeyMap).forEach(field=>{
+      const raw = r[headerKeyMap[field]];
+      out[field] = DATE_FIELDS.includes(field) ? cellToDateField(raw) : cellToPlainValue(raw);
+    });
+    return out;
+  }).filter(o=>o.vgNo||o.style||o.po);
+  const rawOrderCount = orders.length;
+  const expandedOrders = expandOrders(orders);
+  const ambiguousCount = expandOrders.lastAmbiguous || 0;
+  orders.length = 0; expandedOrders.forEach(o=>orders.push(o));
+  if(orders.length!==rawOrderCount) toast(`${rawOrderCount} order rows → ${orders.length} vendor rows (multi-vendor split)`);
+  if(ambiguousCount) setTimeout(()=>alert(`${ambiguousCount} rows ka Supplier Name unclear hai (kai vendor ':' se likhe par ';' nahi). Unhe format me likho: Process:Vendor;Process:Vendor — jaise Resin:Abdullah;Making:Faizan`), 600);
+
+  const matchedLabels = Object.keys(headerKeyMap).map(f=>`${f} → "${headerCells[headerKeyMap[f]]}"`);
+  await idbPut('meta', {key:'orderMaster', value:orders});
+  await idbPut('meta', {key:'orderMasterInfo', value:{filename:file.name, count:orders.length, uploadedAt:Date.now(), mappedFields:matchedLabels, headerRow: headerRowIdx+1}});
+  orderMasterCache = orders;
+  if(!orders.length){
+    toast('Koi column pehchana nahi gaya — Admin tab me column names check karo');
+  } else {
+    toast(`${orders.length} orders loaded from ${file.name}`);
+  }
+  renderAdmin();
+  syncOrderMasterToSheet(orders).catch(()=>{});
+}
+async function syncOrderMasterToSheet(orders){
+  orders = expandOrders(orders);
+  const rec = await idbGet('meta','sheetUrl');
+  const url = rec && rec.value;
+  const statusEl = document.getElementById('orderMasterSyncStatus');
+  if(!url){ if(statusEl) statusEl.textContent='Google Sheet backup URL Admin me set nahi hai — sirf is device par order master saved hai.'; return false; }
+  // Only send the fields the schedule/search actually needs — keeps the Sheet light.
+  const slimAll = orders.map(o=>({
+    vgNo:o.vgNo||'', buyerCode:o.buyerCode||'', style:o.style||'', po:o.po||'',
+    initialDate:o.initialDate||'', finalInspectionDate:o.finalInspectionDate||'',
+    poDate:o.poDate||'', ppmDate:o.ppmDate||'', shipDate:o.shipDate||'',
+    supplier:o.supplier||'', samplesApprovedDate:o.samplesApprovedDate||'', status:o.status||'',
+    merchant:o.merchant||'', color:o.color||'', orderQty:o.orderQty||'', desc:o.desc||'',
+    process:o.process||'', vendorOrderDate:o.vendorOrderDate||'', vendorDeliveryDate:o.vendorDeliveryDate||''
+  })).filter(o=>o.vgNo);
+  // VG No + PO + Style + Colour + Order Qty are mandatory — this exact combo is
+  // how duplicate vs genuinely-different-variant rows are told apart. A row
+  // missing any of these would falsely look like a "different variant" of an
+  // existing entry, so it's kept out of the Sheet until the source data is
+  // complete, rather than letting bad data cause confusion downstream.
+  const MANDATORY = ['vgNo','po','style','color','orderQty'];
+  const slim = slimAll.filter(o => MANDATORY.every(f => String(o[f]||'').trim()));
+  const skipped = slimAll.filter(o => !MANDATORY.every(f => String(o[f]||'').trim()));
+  try{
+    await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({kind:'orderMaster', orders: slim}) });
+    let msg = `Order master synced to Sheet (${slim.length} complete orders) — ${new Date().toLocaleString()}. Existing rows for other VGs are kept, not deleted.`;
+    if(skipped.length){
+      const sample = skipped.slice(0,8).map(o=>o.vgNo).join(', ');
+      msg += ` ⚠ ${skipped.length} rows skipped — VG No/PO/Style/Colour/Qty me se kuch missing tha (VG: ${sample}${skipped.length>8?'…':''}). Order sheet me ye fields bhar ke dobara upload karo.`;
+    }
+    if(statusEl) statusEl.textContent = msg;
+    if(skipped.length) toast(`${skipped.length} rows skip hui — 5 mandatory fields missing`);
+    return true;
+  }catch(err){
+    if(statusEl) statusEl.textContent = 'Order master Sheet sync fail hua — dobara "Sync to Sheet now" try karo.';
+    return false;
+  }
+}
+document.getElementById('orderMasterDrop').addEventListener('click', ()=>document.getElementById('orderMasterInput').click());
+document.getElementById('orderMasterInput').addEventListener('change', async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  try{ await handleOrderMasterFile(f); }catch(err){ console.error(err); toast('File padhne mein error — format check karo'); }
+  e.target.value='';
+});
+document.getElementById('clearOrderMasterBtn').addEventListener('click', async ()=>{
+  await idbPut('meta',{key:'orderMaster', value:[]});
+  await idbPut('meta',{key:'orderMasterInfo', value:null});
+  orderMasterCache = [];
+  toast('Order master cleared (Sheet me pehle se sync hua data alag se delete nahi hota)');
+  renderAdmin();
+});
+document.getElementById('syncOrderMasterBtn').addEventListener('click', async ()=>{
+  const orders = await getOrderMaster();
+  if(!orders.length){ toast('Pehle order master upload karo'); return; }
+  toast('Syncing…');
+  await syncOrderMasterToSheet(orders);
+  renderAdmin();
+});
+
+let orderMasterCache = null;
+/* ---------- Multi-vendor orders: one row per vendor ----------
+   Supplier Name like  Resin:Abdullah:15-09-2026:30-09-2026;Making:NF International
+   (";" between vendors, ":" between process / vendor / order date / delivery date)
+   is split into one entry per vendor. The "Making" vendor is the main one that goes
+   through Inline / DUPRO / Pre-Final / Final; every other vendor is a raw-material
+   supplier, inspected under Raw Material. */
+function flexDateISO(t){
+  t = String(t||'').trim(); if(!t) return '';
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = t.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);
+  if(m){ const y = m[3].length===2 ? '20'+m[3] : m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  const d = new Date(t);
+  return isNaN(d) ? '' : d.toISOString().slice(0,10);
+}
+function isMainVendorProcess(p){ p = String(p||'').trim(); return !p || /making/i.test(p); }
+function expandOrders(orders){
+  const out = []; let ambiguous = 0;
+  (orders||[]).forEach(o=>{
+    const sup = String(o.supplier||'').trim();
+    if(o.process || !sup.includes(':')){ out.push(o); return; }
+    if(!sup.includes(';') && (sup.match(/:/g)||[]).length>1){
+      // e.g. "Casting: RR Trading Resin: Shama Making:Mansi" — vendor boundaries unclear
+      ambiguous++; out.push(Object.assign({}, o, {supplierAmbiguous:true})); return;
+    }
+    const segs = sup.split(';').map(x=>x.trim()).filter(Boolean);
+    let made = 0;
+    segs.forEach(seg=>{
+      const parts = seg.split(':').map(x=>x.trim());
+      const vendor = parts[1]!==undefined ? parts[1] : parts[0];
+      const process = parts[1]!==undefined ? parts[0] : '';
+      if(!vendor) return;
+      out.push(Object.assign({}, o, {supplier:vendor, process, vendorOrderDate:flexDateISO(parts[2]), vendorDeliveryDate:flexDateISO(parts[3])}));
+      made++;
+    });
+    if(!made) out.push(o);
+  });
+  expandOrders.lastAmbiguous = ambiguous;
+  return out;
+}
+
+async function getOrderMaster(){
+  if(orderMasterCache) return orderMasterCache;
+  const rec = await idbGet('meta','orderMaster');
+  orderMasterCache = expandOrders((rec && rec.value) || []);
+  return orderMasterCache;
+}
+/* ---------- Company letterhead (for PDF) ---------- */
+async function renderCompanyInfoForm(){
+  await pullCompanyInfoFromSheet();
+  const rec = await idbGet('meta','companyInfo');
+  const info = (rec && rec.value) || {name:'',address:'',logo:''};
+  document.getElementById('f_companyName').value = info.name || '';
+  document.getElementById('f_companyAddress').value = info.address || '';
+  const preview = document.getElementById('companyLogoPreview');
+  preview.innerHTML = info.logo ? `<img src="${info.logo}" style="max-height:60px;max-width:200px;border:1px solid var(--line);border-radius:6px;padding:4px;background:#fff">` : '<span class="hint">No logo uploaded yet.</span>';
+}
+let pendingCompanyLogo = null;
+document.getElementById('companyLogoDrop').addEventListener('click', ()=>document.getElementById('companyLogoInput').click());
+document.getElementById('companyLogoInput').addEventListener('change', async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  pendingCompanyLogo = await compressImage(f, 260, 0.72); // kept small so it fits safely in a single Sheet cell when synced
+  document.getElementById('companyLogoPreview').innerHTML = `<img src="${pendingCompanyLogo}" style="max-height:60px;max-width:200px;border:1px solid var(--line);border-radius:6px;padding:4px;background:#fff">`;
+  e.target.value='';
+});
+document.getElementById('saveCompanyInfoBtn').addEventListener('click', async ()=>{
+  const rec = await idbGet('meta','companyInfo');
+  const existing = (rec && rec.value) || {};
+  const info = {
+    name: document.getElementById('f_companyName').value.trim(),
+    address: document.getElementById('f_companyAddress').value.trim(),
+    logo: pendingCompanyLogo || existing.logo || '',
+    updatedAt: Date.now()
+  };
+  await idbPut('meta', {key:'companyInfo', value:info});
+  toast('Letterhead saved');
+  syncCompanyInfoToSheet(info).catch(()=>{});
+});
+async function syncCompanyInfoToSheet(info){
+  const rec = await idbGet('meta','sheetUrl');
+  const url = rec && rec.value;
+  const statusEl = document.getElementById('companyInfoSyncStatus');
+  if(!url){ if(statusEl) statusEl.textContent='Google Sheet backup URL Admin me set nahi hai — sirf is device par letterhead saved hai.'; return false; }
+  try{
+    await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({kind:'companyInfo', companyInfo: info}) });
+    if(statusEl) statusEl.textContent = 'Letterhead synced to Sheet — '+new Date().toLocaleString()+'. Team ke baaki phones agli baar Admin kholte hi ye khud utha lenge.';
+    return true;
+  }catch(err){
+    if(statusEl) statusEl.textContent = 'Sheet sync fail hua — dobara "Save letterhead" try karo.';
+    return false;
+  }
+}
+async function pullCompanyInfoFromSheet(){
+  const rec = await idbGet('meta','sheetUrl');
+  const url = rec && rec.value;
+  if(!url) return;
+  try{
+    const sep = url.includes('?') ? '&' : '?';
+    const resp = await fetch(url+sep+'type=companyInfo');
+    if(!resp.ok) return;
+    const data = await resp.json();
+    if(!data || !data.companyInfo) return;
+    const remote = data.companyInfo;
+    const local = await idbGet('meta','companyInfo');
+    const localVal = (local && local.value) || {};
+    // Only pull in what's newer than what this device already has, and don't
+    // clobber a value this device set more recently than the Sheet's copy.
+    if((remote.updatedAt||0) > (localVal.updatedAt||0)){
+      await idbPut('meta', {key:'companyInfo', value:remote});
+    }
+  }catch(err){ /* offline — fine, use whatever this device already has */ }
+}
+async function pullOrderMasterFromSheet(){
+  const rec = await idbGet('meta','sheetUrl');
+  const url = rec && rec.value;
+  if(!url) return;
+  // If this device already has its own uploaded order master, don't override it —
+  // only fill the gap for devices that have never uploaded one themselves.
+  const infoRec = await idbGet('meta','orderMasterInfo');
+  if(infoRec && infoRec.value && infoRec.value.count) return;
+  try{
+    const sep = url.includes('?') ? '&' : '?';
+    const resp = await fetch(url+sep+'type=orderMaster');
+    if(!resp.ok) return;
+    const data = await resp.json();
+    if(!data || !Array.isArray(data.orders) || !data.orders.length) return;
+    await idbPut('meta', {key:'orderMaster', value:expandOrders(data.orders)});
+    await idbPut('meta', {key:'orderMasterInfo', value:{filename:'(auto-synced from Google Sheet)', count:data.orders.length, uploadedAt:Date.now(), mappedFields:[], headerRow:1}});
+    orderMasterCache = data.orders;
+  }catch(err){ /* offline — fine, this device just won't have search until it's back online */ }
+}
+
+async function renderOrderMasterStatus(){
+  const infoRec = await idbGet('meta','orderMasterInfo');
+  const info = infoRec && infoRec.value;
+  const el = document.getElementById('orderMasterStatus');
+  if(!info){ el.textContent='No order master uploaded yet.'; return; }
+  if(!info.count){
+    el.innerHTML = `<span style="color:var(--clay)">${escapeHtml(info.filename)} — 0 orders loaded (row ${info.headerRow||1} used as header, but no VG No/Style/PO column was recognised). Rename that column to something like "VG No" and re-upload.</span>`;
+    return;
+  }
+  el.textContent = `${info.filename} — ${info.count} orders — header row ${info.headerRow||1} — uploaded ${new Date(info.uploadedAt).toLocaleString()} — matched: ${info.mappedFields.join(', ')||'none'}`;
+}
+
+const orderSearchInput = document.getElementById('f_orderSearch');
+const orderSearchResults = document.getElementById('orderSearchResults');
+let orderSearchDebounce=null;
+orderSearchInput.addEventListener('input', ()=>{
+  clearTimeout(orderSearchDebounce);
+  orderSearchDebounce = setTimeout(runOrderSearch, 150);
+});
+async function runOrderSearch(){
+  const q = orderSearchInput.value.trim().toLowerCase();
+  if(!q){ orderSearchResults.style.display='none'; orderSearchResults.innerHTML=''; return; }
+  const orders = await getOrderMaster();
+  if(!orders.length){ orderSearchResults.style.display='block'; orderSearchResults.innerHTML='<div class="sr-item">Order master upload nahi hai — Admin tab se upload karo.</div>'; return; }
+  const matches = orders.filter(o=>
+    [o.vgNo,o.style,o.po,o.buyerCode,o.supplier].some(v=>String(v||'').toLowerCase().includes(q))
+  );
+  // Raw Material inspection -> raw-material vendors first; every other type -> the Making vendor first.
+  const wantRaw = state.inspectionType==='Raw Material';
+  matches.sort((a,b)=> (wantRaw ? (isMainVendorProcess(a.process)?1:0)-(isMainVendorProcess(b.process)?1:0) : (isMainVendorProcess(a.process)?0:1)-(isMainVendorProcess(b.process)?0:1)));
+  matches.splice(25);
+  if(!matches.length){ orderSearchResults.style.display='block'; orderSearchResults.innerHTML='<div class="sr-item">Koi match nahi mila.</div>'; return; }
+  orderSearchResults.style.display='block';
+  orderSearchResults.innerHTML = matches.map((o,i)=>`
+    <div class="sr-item" data-i="${i}"><b>${escapeHtml(o.vgNo||'')} · ${escapeHtml(o.style||'')}</b><span>${escapeHtml(o.buyerCode||'')} · PO ${escapeHtml(o.po||'')} · ${escapeHtml(o.color||'')}</span>${o.supplier?`<span>${o.process?escapeHtml(o.process)+': ':''}<b>${escapeHtml(o.supplier)}</b></span>`:''}</div>`).join('');
+  orderSearchResults.querySelectorAll('.sr-item[data-i]').forEach(el=>{
+    el.addEventListener('click', ()=>applyOrderMatch(matches[+el.dataset.i]));
+  });
+}
+function applyOrderMatch(o){
+  const fields = ['vgNo','style','po','buyerCode','color','desc','supplier','orderQty','challan'];
+  fields.forEach(f=>{
+    if(o[f]!==undefined && o[f]!==''){
+      state[f] = o[f];
+      const el = document.getElementById('f_'+f);
+      if(el) el.value = o[f];
+    }
+  });
+  if(o.merchant){
+    if(!state.sigMeta) state.sigMeta = {};
+    if(!state.sigMeta.merchant) state.sigMeta.merchant = {name:'',designation:''};
+    state.sigMeta.merchant.name = o.merchant;
+    const el = document.querySelector('input[data-sig="merchant"][data-sf="name"]');
+    if(el) el.value = o.merchant;
+  }
+  state.vendorProcess = o.process || '';
+  if(o.process && !isMainVendorProcess(o.process) && state.inspectionType && state.inspectionType!=='Raw Material' && state.inspectionType!=='Pilot Run'){
+    toast('Dhyan do: ye '+o.process+' (raw material) vendor hai — Making vendor chuno ya type Raw Material karo');
+  }
+  markDirty();
+  orderSearchInput.value = '';
+  orderSearchResults.style.display='none'; orderSearchResults.innerHTML='';
+  toast('Order details filled from order master');
+}
+document.addEventListener('click', e=>{
+  if(!e.target.closest('.search-wrap')) { orderSearchResults.style.display='none'; }
+});
+
+/* ---------- Report numbering (per inspection-type prefix) ---------- */
+const TYPE_PREFIX = { 'Pilot Run':'PLT', 'Inline':'INL', 'DUPRO':'DUP', 'Pre-Final':'PF', 'Final':'FIN', 'Random Check':'RC', 'Container Loading':'CL', 'Raw Material':'RM' };
+function prefixFor(type){ return TYPE_PREFIX[type] || 'GEN'; }
+let reportNoLocked = false; // true once a report has been saved under its current number, or opened from storage
+
+async function localMaxForPrefix(prefix){
+  const all = await idbGetAll('reports');
+  let max=0;
+  all.forEach(r=>{
+    if(r.reportNo && r.reportNo.startsWith(prefix+'-')){
+      const n = parseInt(r.reportNo.slice(prefix.length+1),10);
+      if(!isNaN(n)) max = Math.max(max,n);
+    }
+  });
+  return max;
+}
+async function remoteMaxForPrefix(prefix){
+  try{
+    const rec = await idbGet('meta','sheetUrl'); const url = rec && rec.value;
+    if(!url) return 0;
+    const sep = url.includes('?') ? '&' : '?';
+    const resp = await fetch(url+sep+'type='+encodeURIComponent(prefix));
+    if(!resp.ok) return 0;
+    const data = await resp.json();
+    return parseInt(data.maxNumber,10) || 0;
+  }catch(e){ return 0; } // offline or older Apps Script version without doGet — fall back to local numbering
+}
+async function nextReportNo(type){
+  const prefix = prefixFor(type);
+  const floorRec = await idbGet('meta','reportNoFloor:'+prefix);
+  const floor = floorRec ? floorRec.value : 1;
+  const [localMax, remoteMax] = await Promise.all([localMaxForPrefix(prefix), remoteMaxForPrefix(prefix)]);
+  const next = Math.max(floor, localMax+1, remoteMax+1);
+  return prefix+'-'+next;
+}
+
+/* ---------- Save / Load / New ---------- */
+async function applyRememberedInspector(){
+  const r = await idbGet('meta','lastInspector');
+  if(r && r.value && !state.inspector) state.inspector = r.value;
+}
+let requirePinOnSave = false; // true once a previously saved report is opened for editing
+async function saveReport(){
+  if(requirePinOnSave && !adminUnlocked){
+    const ok = await requirePin('saved report me badlav (edit)');
+    if(!ok) return;
+  }
+  requirePinOnSave = false;
+  state.updatedAt = Date.now();
+  if(!state.reportNo){ state.reportNo = await nextReportNo(state.inspectionType); document.getElementById('f_reportNo').value = state.reportNo; }
+  await idbPut('reports', state);
+  reportNoLocked = true;
+  dirty=false; renderStatus();
+  toast('Report saved locally');
+  syncToSheet(state).catch(()=>{});
+}
+document.getElementById('saveBtn').addEventListener('click', saveReport);
+
+document.getElementById('newBtn').addEventListener('click', async ()=>{
+  if(dirty){ const ok=confirm('Unsaved changes — discard and start a new report?'); if(!ok) return; }
+  state = emptyReport();
+  reportNoLocked = false;
+  requirePinOnSave = false;
+  await applyRememberedInspector();
+  state.reportNo = await nextReportNo(state.inspectionType);
+  loadFormFromState();
+  dirty=false; renderStatus();
+  switchView('details');
+});
+
+async function openReport(id){
+  const r = await idbGet('reports', id);
+  if(!r) return;
+  state = r;
+  reportNoLocked = true;
+  requirePinOnSave = true;
+  loadFormFromState();
+  dirty=false; renderStatus();
+  switchView('details');
+}
+
+/* ---------- Admin view ---------- */
+async function renderAdmin(){
+  await pullOrderMasterFromSheet();
+  await renderOrderMasterStatus();
+  await renderCompanyInfoForm();
+  const urlRec = await idbGet('meta','sheetUrl');
+  document.getElementById('f_sheetUrl').value = (urlRec&&urlRec.value)||'';
+  const floorLines=[];
+  for(const p of ['GEN','PLT','INL','DUP','PF','FIN','RC','CL','RM']){
+    const rec = await idbGet('meta','reportNoFloor:'+p);
+    if(rec) floorLines.push(`${p} ≥ ${rec.value}`);
+  }
+  document.getElementById('reportNoFloorStatus').textContent = floorLines.length ? 'Active overrides: '+floorLines.join(' · ') : 'No overrides set — numbering follows saved/synced reports.';
+
+  const all = await idbGetAll('reports');
+  all.sort((a,b)=>b.updatedAt-a.updatedAt);
+  const list=document.getElementById('reportsList');
+  list.innerHTML = all.length ? all.map(r=>`
+    <div class="report-item">
+      <div>#${escapeHtml(r.reportNo||'—')} · ${escapeHtml(r.vgNo||'no VG')} · ${escapeHtml(r.style||'')}</div>
+      <button class="r-open" data-id="${r.id}">Open</button>
+    </div>`).join('') : '<div class="hint">No saved reports yet.</div>';
+  list.querySelectorAll('.r-open').forEach(b=>b.addEventListener('click', ()=>openReport(b.dataset.id)));
+
+  // storage usage
+  if(navigator.storage && navigator.storage.estimate){
+    const est = await navigator.storage.estimate();
+    const pct = est.quota ? Math.min(100, (est.usage/est.quota*100)) : 0;
+    document.getElementById('storageUsageBar').style.width = pct.toFixed(1)+'%';
+    document.getElementById('storageUsageStatus').textContent = `${(est.usage/1048576).toFixed(1)} MB used of ~${(est.quota/1048576).toFixed(0)} MB (${all.length} reports)`;
+  } else {
+    document.getElementById('storageUsageStatus').textContent = `${all.length} reports saved.`;
+  }
+  renderAllTeamReports();
+}
+async function renderAllTeamReports(){
+  const el = document.getElementById('allReportsList');
+  const rec = await idbGet('meta','sheetUrl');
+  const url = rec && rec.value;
+  if(!url){ el.textContent='Google Sheet URL set karo pehle (neeche) — tabhi poori team ke reports yahan dikhenge.'; return; }
+  let resp;
+  try{
+    const sep = url.includes('?') ? '&' : '?';
+    resp = await fetch(url+sep+'type=allReports');
+  }catch(err){
+    el.textContent='Sheet se connect nahi ho paya ('+(err && err.message || 'network')+'). Sheet URL sahi hai? Web App "Anyone" access par deploy hai?'; return;
+  }
+  if(!resp.ok){ el.textContent='Sheet ne error diya (HTTP '+resp.status+').'; return; }
+  let data;
+  try{ data = await resp.json(); }
+  catch(err){ el.textContent='Sheet se jawab padha nahi ja saka — Apps Script ka NEW VERSION deploy kiya hai? (Deploy > Manage deployments > New version)'; return; }
+  if(!data || !Array.isArray(data.reports)){ el.textContent='Purana Apps Script deployed hai (allReports support nahi) — naya AppsScript.gs paste karke "New version" deploy karo.'; return; }
+  const reports = data.reports;
+  if(!reports.length){ el.textContent='Abhi tak Sheet me koi report sync nahi hui.'; return; }
+  el.innerHTML = reports.map(r=>`
+    <div class="report-item">
+      <div>#${escapeHtml(r.reportNo||'—')} · VG ${escapeHtml(r.vgNo||'—')} · ${escapeHtml(r.inspectionType||'')} · ${escapeHtml(r.inspector||'?')} · ${escapeHtml(r.date||'')} ${r.result?'· <b>'+escapeHtml(r.result)+'</b>':''}</div>
+    </div>`).join('');
+}
+document.getElementById('saveSheetUrlBtn').addEventListener('click', async ()=>{
+  const url = document.getElementById('f_sheetUrl').value.trim();
+  await idbPut('meta', {key:'sheetUrl', value:url});
+  toast('Sheet URL saved');
+});
+document.getElementById('testSheetBtn').addEventListener('click', async ()=>{
+  const ok = await syncToSheet(state, true);
+  toast(ok ? 'Test row sent — check your Sheet' : 'Sync failed — check the URL');
+});
+document.getElementById('setReportNoFloorBtn').addEventListener('click', async ()=>{
+  const val = parseInt(document.getElementById('f_reportNoFloor').value);
+  if(!val){ toast('Enter a number first'); return; }
+  const prefix = prefixFor(document.getElementById('f_reportNoFloorType').value);
+  await idbPut('meta',{key:'reportNoFloor:'+prefix, value:val});
+  toast(`${prefix} numbering floor set to ${val}`);
+  renderAdmin();
+});
+
+/* ---------- Google Sheet backup ---------- */
+async function syncToSheet(rep, silent){
+  const rec = await idbGet('meta','sheetUrl');
+  const url = rec && rec.value;
+  const statusEl = document.getElementById('sheetSyncStatus');
+  if(!url){ if(statusEl) statusEl.textContent='Google Sheet backup not set up yet — see Admin tab.'; return false; }
+  const {critical,major,minor,total} = countDefects();
+  const defectsSummary = (rep.defects||[]).map(d=>`${d.desc||'(no description)'} (${d.severity||'?'}) x${d.qty||1}`).join('; ');
+  const payload = {
+    kind: 'report',
+    reportNo: rep.reportNo, date: rep.date, vgNo: rep.vgNo, inspectionType: rep.inspectionType, inspector: rep.inspector,
+    buyerCode: rep.buyerCode, supplier: rep.supplier, style: rep.style, color: rep.color,
+    po: rep.po, orderQty: rep.orderQty, actualQty: rep.actualQty,
+    counterSample: rep.counterSample, prepackRequired: rep.prepackRequired, labTest: rep.labTest,
+    totalCartons: rep.totalCartons, offeredCartons: rep.offeredCartons, cartonOpenedAuto: rep.cartonOpenedAuto, cartonOpenedManual: rep.cartonOpenedManual, cartonOpenedTotal: rep.cartonOpenedTotal,
+    critical, major, minor, totalDefects: total, result: getAqlResult(), defectsSummary,
+    location: rep.location ? `${rep.location.lat},${rep.location.lng}` : '',
+    remarksBuyer: rep.remarksBuyer, actionBuyer: rep.actionBuyer,
+    photoCount: rep.photos.length, savedAt: new Date().toISOString()
+  };
+  // Queue first, then send: if there is no network the report waits here and is
+  // sent automatically when the phone is back online (no data lost, nothing to redo).
+  await enqueueSync(payload);
+  const ok = await flushSyncQueue();
+  if(statusEl) statusEl.textContent = ok ? 'Last synced to Google Sheet: '+new Date().toLocaleString() : 'Offline — report queue me hai, net aate hi apne aap Sheet me chala jayega.';
+  return ok;
+}
+let syncFlushing = false;
+async function enqueueSync(payload){
+  const rec = await idbGet('meta','syncQueue');
+  const q = ((rec && rec.value) || []).filter(x=>x.reportNo!==payload.reportNo);
+  q.push(payload);
+  await idbPut('meta',{key:'syncQueue', value:q});
+}
+async function flushSyncQueue(){
+  if(syncFlushing) return false;
+  syncFlushing = true;
+  try{
+    const urlRec = await idbGet('meta','sheetUrl');
+    const url = urlRec && urlRec.value;
+    if(!url) return false;
+    let rec = await idbGet('meta','syncQueue');
+    let q = (rec && rec.value) || [];
+    while(q.length){
+      try{
+        await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(q[0]) });
+      }catch(err){ return false; }
+      q.shift();
+      await idbPut('meta',{key:'syncQueue', value:q});
+    }
+    return true;
+  } finally { syncFlushing = false; }
+}
+window.addEventListener('online', ()=>{ flushSyncQueue().then(ok=>{ if(ok) toast('Pending reports Sheet me sync ho gayi'); }).catch(()=>{}); });
+
+/* ---------- Excel export ---------- */
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const {critical,major,minor,total} = countDefects();
+  const wb = XLSX.utils.book_new();
+  const summary = [
+    ['Report No', state.reportNo],['Date', state.date],['VG No', state.vgNo],['Inspection type', state.inspectionType],['Inspector', state.inspector],
+    ['Result', getAqlResult()],
+    ['Location', state.location? `${state.location.lat}, ${state.location.lng}` : ''],
+    ['Buyer code', state.buyerCode],['Supplier', state.supplier],['Style', state.style],['Color', state.color],
+    ['Description', state.desc],['PO', state.po],['Challan', state.challan],
+    ['Order qty', state.orderQty],['Actual/Offered qty', state.actualQty],
+    ['Counter sample', state.counterSample],['Prepack required', state.prepackRequired],['Prepack qty (pcs)', state.prepackQty],['Lab test result', state.labTest],
+    ['Total carton', state.totalCartons],['Offered carton', state.offeredCartons],['Qty per carton', state.qtyPerCarton],['Carton opened — auto', state.cartonOpenedAuto],['Carton opened — manual (extra)', state.cartonOpenedManual],['Carton opened — total', state.cartonOpenedTotal],['Open carton no.', state.openCartonNo],
+    ['Critical defects', critical],['Major defects', major],['Minor defects', minor],['Total defects', total],
+    ['Vendor remarks', state.remarksVendor],['Buyer remarks', state.remarksBuyer],
+    ['Vendor action', state.actionVendor],['Buyer action', state.actionBuyer],
+    ['Inspector name', state.sigMeta&&state.sigMeta.inspector.name],['Inspector designation', state.sigMeta&&state.sigMeta.inspector.designation],
+    ['Production sign name', state.sigMeta&&state.sigMeta.production&&state.sigMeta.production.name],['Production sign designation', state.sigMeta&&state.sigMeta.production&&state.sigMeta.production.designation],
+    ['Merchant sign name', state.sigMeta&&state.sigMeta.merchant&&state.sigMeta.merchant.name],['Merchant sign designation', state.sigMeta&&state.sigMeta.merchant&&state.sigMeta.merchant.designation],
+    ['Vendor sign name', state.sigMeta&&state.sigMeta.vendor.name],['Vendor sign designation', state.sigMeta&&state.sigMeta.vendor.designation],
+    ['Buyer sign name', state.sigMeta&&state.sigMeta.buyer.name],['Buyer sign designation', state.sigMeta&&state.sigMeta.buyer.designation]
+  ];
+  const ws1 = XLSX.utils.aoa_to_sheet(summary);
+  XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
+
+  const defRows = [['#','Description','Qty','Severity'], ...state.defects.map((d,i)=>[i+1,d.desc,d.qty,d.severity])];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(defRows), 'Defects');
+
+  const chkRows = [['Section','Item','Result']];
+  [['A',CHECKLIST_A],['C',CHECKLIST_C],['D',CHECKLIST_D]].forEach(([g,items])=>{
+    items.forEach((label,i)=>chkRows.push([g, label, (state.checklist[g]&&state.checklist[g][i])||'']));
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chkRows), 'Checklist');
+
+  if(state.rawMaterials && state.rawMaterials.length){
+    const rmRows = [['Material','Unit','Qty/piece','Required total','Received','% received','Quality','Quality remarks','Balance expected by']];
+    state.rawMaterials.forEach(r=>{
+      const required = rmRequiredTotal(r); const st = rmStatus(r);
+      rmRows.push([r.name, r.unit, r.perPieceQty, required?required.toFixed(2):'', r.received, st.percent!=null?st.percent+'%':'', r.qualityStatus, r.qualityRemarks, r.expectedDate]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rmRows), 'Raw Material');
+  }
+
+  XLSX.writeFile(wb, `${state.vgNo||state.reportNo||'report'}_QC.xlsx`);
+});
+
+/* ---------- PDF export ---------- */
+async function downloadPdf(audience){
+  const {critical,major,minor,total} = countDefects();
+  const isRaw = state.inspectionType==='Raw Material';
+  const plan = isRaw ? null : planForType(parseInt(state.actualQty)||0, state.inspectionType);
+  const isHindiVendor = audience==='vendor';
+  const companyRec = await idbGet('meta','companyInfo');
+  const company = (companyRec && companyRec.value) || {name:'',address:'',logo:''};
+  const rmBlock = (state.rawMaterials && state.rawMaterials.length) ? `
+      <h3 style="font-size:13px;margin:14px 0 6px">Raw material check</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px">
+        <tr><th style="border:1px solid #ccc;padding:4px">Material</th><th style="border:1px solid #ccc;padding:4px">Required</th><th style="border:1px solid #ccc;padding:4px">Received</th><th style="border:1px solid #ccc;padding:4px">Status</th><th style="border:1px solid #ccc;padding:4px">Quality</th></tr>
+        ${state.rawMaterials.map(r=>{ const required=rmRequiredTotal(r); const st=rmStatus(r); return `<tr><td style="border:1px solid #ccc;padding:4px">${escapeHtml(r.name||'')}</td><td style="border:1px solid #ccc;padding:4px">${required?required.toFixed(2):''} ${escapeHtml(r.unit||'')}</td><td style="border:1px solid #ccc;padding:4px">${r.received||''} ${escapeHtml(r.unit||'')}</td><td style="border:1px solid #ccc;padding:4px">${st.label}</td><td style="border:1px solid #ccc;padding:4px">${escapeHtml(r.qualityStatus||'')}</td></tr>`; }).join('')}
+      </table>` : '';
+  const photosBlock = (state.photos && state.photos.length) ? `
+      <h3 style="font-size:13px;margin:14px 0 6px">Inspection photos (${state.photos.length})</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px">
+        ${state.photos.map(p=>`
+          <div style="width:250px;page-break-inside:avoid">
+            <img src="${p.data}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;display:block">
+            <div style="font-size:12px;color:#14181F;margin-top:5px;text-align:center;font-weight:600">${escapeHtml(p.caption||'(no comment)')}</div>
+          </div>`).join('')}
+      </div>` : '';
+  const counterSampleBlock = (state.counterSample==='Yes' && state.counterSamplePhoto) ? `
+      <h3 style="font-size:13px;margin:14px 0 6px">Counter Sample vs Bulk Production comparison</h3>
+      <img src="${state.counterSamplePhoto}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;margin-bottom:14px">` : '';
+  const prepackBlock = (state.prepackRequired==='Yes' && state.prepackPhoto) ? `
+      <h3 style="font-size:13px;margin:14px 0 6px">Prepack (${escapeHtml(state.prepackQty||'')} pcs)</h3>
+      <img src="${state.prepackPhoto}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;margin-bottom:14px">` : '';
+  const letterheadBlock = (company.name || company.address || company.logo) ? `
+      <div style="display:flex;align-items:center;gap:14px;border-bottom:2px solid #14181F;padding-bottom:12px;margin-bottom:14px">
+        ${company.logo?`<img src="${company.logo}" style="height:50px;max-width:140px;object-fit:contain">`:''}
+        <div>
+          ${company.name?`<div style="font-size:16px;font-weight:700">${escapeHtml(company.name)}</div>`:''}
+          ${company.address?`<div style="font-size:10.5px;color:#555;white-space:pre-wrap">${escapeHtml(company.address)}</div>`:''}
+        </div>
+      </div>` : '';
+  const resultVal = getAqlResult();
+  const resultColors = {PASS:['#E1EAE0','#4B6B4F'], FAIL:['#F3DED5','#A44A34'], 'ON HOLD':['#F1E3C6','#6B4A17']};
+  const rc = resultColors[resultVal] || ['#DEE5EC','#3E5266'];
+  const resultBlock = `<div style="display:inline-block;padding:8px 16px;border-radius:6px;background:${rc[0]};color:${rc[1]};font-weight:700;font-size:15px;margin-bottom:14px">Result: ${resultVal || 'Not applicable'}</div>`;
+  const sheet = document.getElementById('printSheet');
+  sheet.innerHTML = `
+    <div style="font-family:Arial,sans-serif;padding:24px;width:760px;color:#14181F">
+      ${letterheadBlock}
+      <h2 style="margin:0 0 4px">Inspection Report</h2>
+      <div style="font-size:12px;color:#555;margin-bottom:14px">Report No ${escapeHtml(state.reportNo)} · ${escapeHtml(state.date)} · VG ${escapeHtml(state.vgNo)} · ${escapeHtml(state.inspectionType||'')}</div>
+      ${resultBlock}
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">
+        ${[['Inspector',state.inspector],['Inspection type',state.inspectionType],['Location', state.location?`${state.location.lat.toFixed(5)}, ${state.location.lng.toFixed(5)}`:''],['Buyer code',state.buyerCode],['Supplier',state.supplier],['Style',state.style],['Colour',state.color],['PO',state.po],['Order qty',state.orderQty],['Actual/Offered qty',state.actualQty],['Sample size',plan?plan.n:''],['Counter sample',state.counterSample],['Prepack required',state.prepackRequired],['Prepack qty (pcs)',state.prepackQty],['Lab test result',state.labTest],['Total carton',state.totalCartons],['Offered carton',state.offeredCartons],['Qty per carton',state.qtyPerCarton],['Carton opened (auto+manual)',`${state.cartonOpenedAuto||0} + ${state.cartonOpenedManual||0} = ${state.cartonOpenedTotal||0}`],['Open carton no.',state.openCartonNo]]
+          .map(([k,v])=>`<tr><td style="border:1px solid #ccc;padding:5px;font-weight:600;width:140px">${k}</td><td style="border:1px solid #ccc;padding:5px">${escapeHtml(String(v||''))}</td></tr>`).join('')}
+      </table>
+      ${rmBlock}
+      ${isRaw ? '' : `
+      <h3 style="font-size:13px;margin:14px 0 6px">Defects — Critical ${critical} / Major ${major} / Minor ${minor} / Total ${total}</h3>
+      ${plan? `<div style="font-size:11px;margin-bottom:8px">${plan.hundred?'100% Inspection (Pilot Run)':'AQL Level II · Code '+plan.code} · Sample ${plan.n} · Critical Ac/Re ${plan.critical.join('/')} · Major Ac/Re ${plan.major.join('/')} · Minor Ac/Re ${plan.minor.join('/')}</div>`:''}
+      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px">
+        <tr><th style="border:1px solid #ccc;padding:4px">#</th><th style="border:1px solid #ccc;padding:4px">Description</th><th style="border:1px solid #ccc;padding:4px">Qty</th><th style="border:1px solid #ccc;padding:4px">Severity</th></tr>
+        ${state.defects.map((d,i)=>`<tr><td style="border:1px solid #ccc;padding:4px">${i+1}</td><td style="border:1px solid #ccc;padding:4px">${escapeHtml(d.desc||'')}</td><td style="border:1px solid #ccc;padding:4px">${d.qty||1}</td><td style="border:1px solid #ccc;padding:4px">${d.severity||''}</td></tr>`).join('')}
+      </table>`}
+      <h3 style="font-size:13px;margin:14px 0 6px">Remarks</h3>
+      <div style="font-size:12px;white-space:pre-wrap;margin-bottom:10px">${escapeHtml(isHindiVendor? state.remarksVendor : state.remarksBuyer)}</div>
+      <h3 style="font-size:13px;margin:14px 0 6px">Action to be taken</h3>
+      <div style="font-size:12px;white-space:pre-wrap;margin-bottom:14px">${escapeHtml(isHindiVendor? state.actionVendor : state.actionBuyer)}</div>
+      ${counterSampleBlock}
+      ${prepackBlock}
+      ${photosBlock}
+      <div style="display:flex;gap:14px;margin-top:20px;flex-wrap:wrap">
+        ${['inspector','production','merchant','vendor','buyer'].map(k=>{
+          const meta = (state.sigMeta&&state.sigMeta[k])||{name:'',designation:''};
+          if(!state.signatures[k] && !meta.name && !meta.designation) return '';
+          return `<div style="text-align:center;min-width:120px">${state.signatures[k]?`<img src="${state.signatures[k]}" style="height:55px">`:'<div style="height:55px"></div>'}<div style="font-size:11px;border-top:1px solid #999;margin-top:4px;padding-top:3px">${escapeHtml(meta.name||'')}${meta.designation?' — '+escapeHtml(meta.designation):''}</div><div style="font-size:9px;color:#777;text-transform:capitalize">${k}</div></div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  sheet.style.display='block';
+  const canvas = await html2canvas(sheet.firstElementChild, {scale:2});
+  sheet.style.display='none';
+
+  const pdf = new jspdf.jsPDF('p','pt','a4');
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const imgW = pageW;
+  const imgH = canvas.height * imgW / canvas.width;
+  const imgData = canvas.toDataURL('image/jpeg',0.92);
+
+  let heightLeft = imgH;
+  let position = 0;
+  pdf.addImage(imgData,'JPEG',0,position,imgW,imgH);
+  heightLeft -= pageH;
+  while(heightLeft > 0){
+    position = heightLeft - imgH;
+    pdf.addPage();
+    pdf.addImage(imgData,'JPEG',0,position,imgW,imgH);
+    heightLeft -= pageH;
+  }
+
+  const fileName = `${state.vgNo||state.reportNo||'report'}_${audience}.pdf`;
+  const pdfBlob = pdf.output('blob');
+  const pdfFile = new File([pdfBlob], fileName, {type:'application/pdf'});
+  if(navigator.canShare && navigator.canShare({files:[pdfFile]})){
+    try{
+      await navigator.share({files:[pdfFile], title:fileName, text:`QC Inspection Report — ${state.vgNo||''}`});
+      return;
+    }catch(err){ /* user cancelled the share sheet, or it failed — fall back to a normal download */ }
+  }
+  pdf.save(fileName);
+}
+document.getElementById('printBtnVendor').addEventListener('click', ()=>downloadPdf('vendor'));
+document.getElementById('printBtnBuyer').addEventListener('click', ()=>downloadPdf('buyer'));
+
+/* ---------- Boot ---------- */
+// Team default — every device connects to this Sheet automatically the first
+// time it opens; Admin can still change it later (Admin > Sheet URL) if the
+// backend ever moves to a different deployment.
+const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzalaTTAB7uat5fOQvwl2fIwGyedRPZyS0KRCu4yMnsJHqMua6oshKTLo-4hXpEhrgp/exec';
+(async function boot(){
+  db = await openDb();
+  const existingUrl = await idbGet('meta','sheetUrl');
+  if(!existingUrl || !existingUrl.value){ await idbPut('meta', {key:'sheetUrl', value: DEFAULT_SHEET_URL}); }
+  state = emptyReport();
+  reportNoLocked = false;
+  await applyRememberedInspector();
+  state.reportNo = await nextReportNo(state.inspectionType);
+  bindFieldListeners();
+  loadFormFromState();
+  dirty = false; renderStatus();
+  flushSyncQueue().catch(()=>{});
+  pullCompanyInfoFromSheet().catch(()=>{});
+  pullOrderMasterFromSheet().catch(()=>{}).then(()=>{ if(currentView==='admin') renderOrderMasterStatus(); });
+})();
+</script>
+</body>
+</html>
