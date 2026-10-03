@@ -85,6 +85,10 @@ textarea{min-height:64px;resize:vertical}
 .photo-tile img{width:100%;height:100%;object-fit:cover}
 .photo-tile .del{position:absolute;top:3px;right:3px;background:rgba(20,24,31,.7);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer}
 .photo-caption-input{width:100%;margin-top:6px;font-size:13px}
+.mp-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.mp-badge.ok{background:#E1EAE0;color:#4B6B4F}
+.mp-badge.bad{background:#F3DCDC;color:#8A3B3B}
+.mp-piece{width:64px}
 .photo-count{font-size:12px;color:var(--ink-soft);margin-bottom:8px}
 .sig-canvas{width:100%;height:110px;border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none}
 .sig-block{margin-bottom:14px}
@@ -230,6 +234,48 @@ textarea{min-height:64px;resize:vertical}
         <div class="file-drop" id="prepackPhotoDrop">Tap to add prepack photo</div>
         <input type="file" id="prepackPhotoInput" accept="image/*" capture="environment" style="display:none">
       </div>
+    </div>
+
+    <div class="card" id="labTestsCard">
+      <h2><span class="n">LT</span>Additional tests (as per buyer requirement)</h2>
+      <div class="hint" style="margin-bottom:10px">Nickel, pull aur measurement test — sirf agar buyer ne maanga ho. "Not Done" chhod do agar nahi hua, report me nahi jayega.</div>
+      <div class="field">
+        <label>Nickel release test <span class="hint">(EN 1811 spot/DMG test · standard sample: 3 pcs)</span></label>
+        <select id="f_nickelTest">
+          <option value="">Not Done</option>
+          <option value="Pass">Pass</option>
+          <option value="Fail">Fail</option>
+        </select>
+      </div>
+      <div class="field" id="nickelTestPhotoBox" style="display:none">
+        <div id="nickelTestPhotoPreview" style="margin-bottom:8px"></div>
+        <div class="file-drop" id="nickelTestPhotoDrop">Tap to add nickel test photo</div>
+        <input type="file" id="nickelTestPhotoInput" accept="image/*" capture="environment" style="display:none">
+      </div>
+      <div class="field">
+        <label>Pull / tension test <span class="hint">(ASTM F963 / 16 CFR 1500.51 · 15 lbf, 10 sec · standard sample: 3 pcs)</span></label>
+        <select id="f_pullTest">
+          <option value="">Not Done</option>
+          <option value="Pass">Pass</option>
+          <option value="Fail">Fail</option>
+        </select>
+      </div>
+      <div class="field" id="pullTestPhotoBox" style="display:none">
+        <div id="pullTestPhotoPreview" style="margin-bottom:8px"></div>
+        <div class="file-drop" id="pullTestPhotoDrop">Tap to add pull test photo</div>
+        <input type="file" id="pullTestPhotoInput" accept="image/*" capture="environment" style="display:none">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">MC</span>Measurement chart</h2>
+      <div class="hint" style="margin-bottom:8px" id="measurementSuggestHint"></div>
+      <div class="grid2" style="margin-bottom:10px">
+        <div class="field"><label>Pieces measured</label><input id="f_measurementPieces" type="number" min="1" value="3"></div>
+        <div class="field"><label>Overall result</label><input id="measurementOverallResult" readonly value="No points added"></div>
+      </div>
+      <div id="measurementPointsList"></div>
+      <button class="btn btn-ghost" id="addMeasurementPointBtn" type="button">+ Add measurement point</button>
     </div>
 
     <div class="card" id="cartonCard" style="display:none">
@@ -544,7 +590,9 @@ function emptyReport(){
     id: 'r_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
     reportNo:'', date:new Date().toISOString().slice(0,10), vgNo:'', inspectionType:'', inspector:'',
     buyerCode:'', supplier:'', style:'', color:'', desc:'', po:'', challan:'',
-    orderQty:'', actualQty:'', counterSample:'', counterSamplePhoto:'', prepackRequired:'', prepackQty:'', prepackPhoto:'', labTest:'', totalCartons:'', offeredCartons:'', qtyPerCarton:'', cartonOpenedAuto:'', cartonOpenedManual:'', cartonOpenedTotal:'', openCartonNo:'',
+    orderQty:'', actualQty:'', counterSample:'', counterSamplePhoto:'', prepackRequired:'', prepackQty:'', prepackPhoto:'', labTest:'',
+    nickelTest:'', nickelTestPhoto:'', pullTest:'', pullTestPhoto:'', measurementPieces:3, measurementPoints:[],
+    totalCartons:'', offeredCartons:'', qtyPerCarton:'', cartonOpenedAuto:'', cartonOpenedManual:'', cartonOpenedTotal:'', openCartonNo:'',
     checklist:{A:{}, C:{}, D:{}},
     defects:[], remarksVendor:'', remarksBuyer:'', actionVendor:'', actionBuyer:'', resultOverride:'',
     rawMaterials:[],
@@ -616,7 +664,7 @@ window.addEventListener('resize', ()=>{ if(currentView==='signoff') signaturePad
 document.querySelectorAll('.navbar button').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
 
 /* ---------- Form <-> state binding ---------- */
-const FIELD_IDS = ['reportNo','date','vgNo','inspectionType','inspector','buyerCode','supplier','style','color','desc','po','challan','orderQty','actualQty','counterSample','prepackRequired','prepackQty','labTest','totalCartons','offeredCartons','qtyPerCarton','cartonOpenedAuto','cartonOpenedManual','cartonOpenedTotal','openCartonNo','remarksVendor','remarksBuyer','actionVendor','actionBuyer'];
+const FIELD_IDS = ['reportNo','date','vgNo','inspectionType','inspector','buyerCode','supplier','style','color','desc','po','challan','orderQty','actualQty','counterSample','prepackRequired','prepackQty','labTest','nickelTest','pullTest','measurementPieces','totalCartons','offeredCartons','qtyPerCarton','cartonOpenedAuto','cartonOpenedManual','cartonOpenedTotal','openCartonNo','remarksVendor','remarksBuyer','actionVendor','actionBuyer'];
 function loadFormFromState(){
   FIELD_IDS.forEach(k=>{ const el=document.getElementById('f_'+k); if(el) el.value = state[k]!=null?state[k]:''; });
   if(!state.rawMaterials) state.rawMaterials=[];
@@ -630,6 +678,13 @@ function loadFormFromState(){
   renderCounterSamplePhoto();
   togglePrepackBox();
   renderPrepackPhoto();
+  if(!state.measurementPoints) state.measurementPoints=[];
+  toggleLabTestPhotoBoxes();
+  renderLabTestPhoto('nickelTestPhoto','nickelTestPhotoPreview');
+  renderLabTestPhoto('pullTestPhoto','pullTestPhotoPreview');
+  renderMeasurementPoints();
+  updateMeasurementOverall();
+  suggestMeasurePointsFromDesc();
   buildSigBlocks();
   renderLocationStatus();
   recalcAql();
@@ -678,6 +733,8 @@ function bindFieldListeners(){
       }
       if(k==='counterSample') toggleCounterSamplePhotoBox();
       if(k==='prepackRequired') togglePrepackBox();
+      if(k==='desc'||k==='style') suggestMeasurePointsFromDesc();
+      if(k==='measurementPieces') { renderMeasurementPoints(); updateMeasurementOverall(); }
     });
   });
 }
@@ -725,6 +782,157 @@ document.getElementById('prepackPhotoInput').addEventListener('change', async e=
   markDirty(); renderPrepackPhoto();
   e.target.value='';
 });
+
+/* ---------- Nickel / Pull test photos ---------- */
+function toggleLabTestPhotoBoxes(){
+  document.getElementById('nickelTestPhotoBox').style.display = state.nickelTest ? 'block' : 'none';
+  document.getElementById('pullTestPhotoBox').style.display = state.pullTest ? 'block' : 'none';
+}
+function renderLabTestPhoto(key, previewId){
+  const preview = document.getElementById(previewId);
+  preview.innerHTML = state[key]
+    ? `<div class="photo-tile" style="width:110px;height:110px"><img src="${state[key]}"><button class="del" data-key="${key}">✕</button></div>`
+    : '<span class="hint">No photo added yet.</span>';
+  if(state[key]){
+    preview.querySelector('.del').addEventListener('click', ()=>{ state[key]=''; markDirty(); renderLabTestPhoto(key, previewId); });
+  }
+}
+document.getElementById('f_nickelTest').addEventListener('change', toggleLabTestPhotoBoxes);
+document.getElementById('f_pullTest').addEventListener('change', toggleLabTestPhotoBoxes);
+document.getElementById('nickelTestPhotoDrop').addEventListener('click', ()=>document.getElementById('nickelTestPhotoInput').click());
+document.getElementById('nickelTestPhotoInput').addEventListener('change', async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  state.nickelTestPhoto = await compressImage(file, 900, 0.65);
+  markDirty(); renderLabTestPhoto('nickelTestPhoto','nickelTestPhotoPreview');
+  e.target.value='';
+});
+document.getElementById('pullTestPhotoDrop').addEventListener('click', ()=>document.getElementById('pullTestPhotoInput').click());
+document.getElementById('pullTestPhotoInput').addEventListener('change', async e=>{
+  const file = e.target.files[0]; if(!file) return;
+  state.pullTestPhoto = await compressImage(file, 900, 0.65);
+  markDirty(); renderLabTestPhoto('pullTestPhoto','pullTestPhotoPreview');
+  e.target.value='';
+});
+
+/* ---------- Measurement chart ----------
+   Which points to suggest is guessed from the Description text (necklace,
+   bangle, bag, scarf, hairband, hairclip, etc.) — inspector can rename,
+   delete, or add any point manually, since not every style matches a
+   template exactly. */
+const ITEM_MEASURE_TEMPLATES = [
+  { match:/bangle|kada/i, label:'Bangle', points:[{name:'Inner Diameter',unit:'mm'},{name:'Width',unit:'mm'}] },
+  { match:/\bring\b/i, label:'Ring', points:[{name:'Inner Diameter',unit:'mm'}] },
+  { match:/necklace|pendant|\bmala\b/i, label:'Necklace', points:[{name:'Total Length',unit:'cm'},{name:'Pendant Length',unit:'cm'},{name:'Pendant Width',unit:'cm'}] },
+  { match:/bracelet/i, label:'Bracelet', points:[{name:'Total Length',unit:'cm'},{name:'Width',unit:'mm'}] },
+  { match:/anklet/i, label:'Anklet', points:[{name:'Total Length',unit:'cm'}] },
+  { match:/ear\s*ring/i, label:'Earring', points:[{name:'Length',unit:'cm'},{name:'Width',unit:'cm'}] },
+  { match:/brooch/i, label:'Brooch', points:[{name:'Length',unit:'cm'},{name:'Width',unit:'cm'}] },
+  { match:/bag|purse|handbag|clutch|pouch|sling/i, label:'Bag', points:[{name:'Length',unit:'cm'},{name:'Width',unit:'cm'},{name:'Height',unit:'cm'},{name:'Strap/Handle Length',unit:'cm'}] },
+  { match:/scarf|stole|dupatta/i, label:'Scarf', points:[{name:'Length',unit:'cm'},{name:'Width',unit:'cm'}] },
+  { match:/hair\s*band|headband/i, label:'Hairband', points:[{name:'Inner Diameter/Circumference',unit:'cm'},{name:'Width',unit:'mm'}] },
+  { match:/hair\s*clip|hair\s*pin|barrette/i, label:'Hairclip', points:[{name:'Length',unit:'mm'},{name:'Width',unit:'mm'}] },
+  { match:/key\s*chain/i, label:'Keychain', points:[{name:'Total Length',unit:'cm'}] },
+];
+function suggestMeasurePointsFromDesc(){
+  const text = (state.desc||'')+' '+(state.style||'');
+  const tpl = ITEM_MEASURE_TEMPLATES.find(t=>t.match.test(text));
+  const hint = document.getElementById('measurementSuggestHint');
+  if(!tpl){ hint.textContent = 'Description se item pehchana nahi gaya — "+ Add measurement point" se khud daalo.'; return; }
+  hint.textContent = `"${tpl.label}" jaisa lag raha hai — ${tpl.points.map(p=>p.name).join(', ')} suggest kiye hain (edit/delete kar sakte ho).`;
+  if(state.measurementPoints.length) return; // don't overwrite points the inspector already set up
+  state.measurementPoints = tpl.points.map(p=>({
+    id: Date.now()+Math.random().toString(36).slice(2,6), name:p.name, unit:p.unit, specified:'', tolerance:'', values:[], photo:''
+  }));
+  renderMeasurementPoints(); markDirty();
+}
+function measurePointStatus(point){
+  const spec = parseFloat(point.specified), tol = parseFloat(point.tolerance);
+  if(isNaN(spec) || isNaN(tol)) return {done:false};
+  const vals = point.values.slice(0, parseInt(state.measurementPieces)||3).filter(v=>v!=='' && v!=null);
+  if(!vals.length) return {done:false};
+  const results = vals.map(v=>{ const n=parseFloat(v); return !isNaN(n) && n>=spec-tol && n<=spec+tol; });
+  return {done:true, pass: results.every(Boolean), count:vals.length};
+}
+function renderMeasurementPoints(){
+  const wrap = document.getElementById('measurementPointsList');
+  const n = Math.max(1, parseInt(state.measurementPieces)||3);
+  wrap.innerHTML = state.measurementPoints.map((pt,i)=>{
+    const st = measurePointStatus(pt);
+    const badge = st.done ? `<span class="mp-badge ${st.pass?'ok':'bad'}">${st.pass?'Within tolerance':'Out of tolerance'}</span>` : '';
+    const pieceInputs = Array.from({length:n}).map((_,pi)=>`<input class="mp-piece" data-i="${i}" data-pi="${pi}" type="number" step="any" placeholder="P${pi+1}" value="${pt.values[pi]!=null?pt.values[pi]:''}">`).join('');
+    return `<div class="row-item" data-i="${i}" style="margin-bottom:10px;padding:10px;border:1px solid var(--line);border-radius:8px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <input class="mp-name" data-i="${i}" placeholder="Point name — jaise Inner Diameter" value="${escapeHtml(pt.name)}" style="flex:1">
+        <button class="btn btn-ghost mp-del" data-i="${i}" type="button" style="padding:6px 10px">✕</button>
+      </div>
+      <div class="grid3" style="margin-bottom:6px">
+        <div class="field"><label>Specified</label><input class="mp-spec" data-i="${i}" type="number" step="any" value="${pt.specified}"></div>
+        <div class="field"><label>Tolerance ±</label><input class="mp-tol" data-i="${i}" type="number" step="any" value="${pt.tolerance}"></div>
+        <div class="field"><label>Unit</label>
+          <select class="mp-unit" data-i="${i}">
+            ${['mm','cm','inch'].map(u=>`<option value="${u}" ${pt.unit===u?'selected':''}>${u}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="hint" style="margin-bottom:4px">Actual (${n} pcs) ${badge}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${pieceInputs}</div>
+      <div id="mpPhotoPreview${i}" style="margin-bottom:6px"></div>
+      <div class="file-drop mp-photo-drop" data-i="${i}">Tap to add photo for this dimension</div>
+      <input type="file" class="mp-photo-input" data-i="${i}" accept="image/*" capture="environment" style="display:none">
+    </div>`;
+  }).join('') || '<div class="hint">Abhi koi point nahi — description se suggest hoga, ya neeche se add karo.</div>';
+  state.measurementPoints.forEach((pt,i)=>{
+    const pv = document.getElementById('mpPhotoPreview'+i);
+    if(pv) pv.innerHTML = pt.photo ? `<div class="photo-tile" style="width:90px;height:90px"><img src="${pt.photo}"><button class="del mp-photo-del" data-i="${i}">✕</button></div>` : '<span class="hint">No photo yet.</span>';
+  });
+  wrap.querySelectorAll('.mp-name').forEach(el=>el.addEventListener('input', ()=>{ state.measurementPoints[+el.dataset.i].name = el.value; markDirty(); }));
+  wrap.querySelectorAll('.mp-spec').forEach(el=>el.addEventListener('input', ()=>{ state.measurementPoints[+el.dataset.i].specified = el.value; markDirty(); updateMeasurementOverall(); refreshMeasurePointBadge(+el.dataset.i); }));
+  wrap.querySelectorAll('.mp-tol').forEach(el=>el.addEventListener('input', ()=>{ state.measurementPoints[+el.dataset.i].tolerance = el.value; markDirty(); updateMeasurementOverall(); refreshMeasurePointBadge(+el.dataset.i); }));
+  wrap.querySelectorAll('.mp-unit').forEach(el=>el.addEventListener('change', ()=>{ state.measurementPoints[+el.dataset.i].unit = el.value; markDirty(); }));
+  wrap.querySelectorAll('.mp-piece').forEach(el=>el.addEventListener('input', ()=>{
+    const i=+el.dataset.i, pi=+el.dataset.pi;
+    state.measurementPoints[i].values[pi] = el.value; markDirty();
+    updateMeasurementOverall(); refreshMeasurePointBadge(i);
+  }));
+  wrap.querySelectorAll('.mp-del').forEach(el=>el.addEventListener('click', ()=>{ state.measurementPoints.splice(+el.dataset.i,1); markDirty(); renderMeasurementPoints(); updateMeasurementOverall(); }));
+  wrap.querySelectorAll('.mp-photo-drop').forEach(el=>el.addEventListener('click', ()=>wrap.querySelector(`.mp-photo-input[data-i="${el.dataset.i}"]`).click()));
+  wrap.querySelectorAll('.mp-photo-input').forEach(el=>el.addEventListener('change', async ()=>{
+    const file = el.files[0]; if(!file) return;
+    const i = +el.dataset.i;
+    state.measurementPoints[i].photo = await compressImage(file, 900, 0.65);
+    markDirty(); renderMeasurementPoints();
+    el.value='';
+  }));
+  wrap.querySelectorAll('.mp-photo-del').forEach(el=>el.addEventListener('click', ()=>{ state.measurementPoints[+el.dataset.i].photo=''; markDirty(); renderMeasurementPoints(); }));
+}
+// Targeted badge refresh only — a full renderMeasurementPoints() on every keystroke
+// would recreate the focused input and drop the mobile keyboard (same class of
+// bug as the Raw Material qty fields).
+function refreshMeasurePointBadge(i){
+  const row = document.querySelector(`#measurementPointsList .row-item[data-i="${i}"]`);
+  if(!row) return;
+  const st = measurePointStatus(state.measurementPoints[i]);
+  const hintEl = row.querySelector('.hint');
+  const n = Math.max(1, parseInt(state.measurementPieces)||3);
+  hintEl.innerHTML = `Actual (${n} pcs) ` + (st.done ? `<span class="mp-badge ${st.pass?'ok':'bad'}">${st.pass?'Within tolerance':'Out of tolerance'}</span>` : '');
+}
+function computeMeasurementOverall(rep){
+  const points = (rep.measurementPoints||[]).filter(p=>p.name);
+  if(!points.length) return '';
+  const statuses = points.map(measurePointStatus);
+  if(statuses.some(s=>!s.done)) return 'Incomplete';
+  return statuses.every(s=>s.pass) ? 'Pass' : 'Fail';
+}
+function updateMeasurementOverall(){
+  const el = document.getElementById('measurementOverallResult');
+  if(!el) return;
+  const result = computeMeasurementOverall(state);
+  el.value = result || 'No points added';
+}
+document.getElementById('addMeasurementPointBtn').addEventListener('click', ()=>{
+  state.measurementPoints.push({id:Date.now()+Math.random().toString(36).slice(2,6), name:'', unit:'cm', specified:'', tolerance:'', values:[], photo:''});
+  markDirty(); renderMeasurementPoints();
+});
 /* Cartons to open uses the common QC field practice of √(offered or total cartons), rounded up. */
 function recalcCartonOpened(){
   const offered = parseFloat(state.offeredCartons) || 0;
@@ -747,9 +955,11 @@ function toggleCartonCard(){
 /* ---------- AQL recalculation ---------- */
 function recalcAql(){
   const box = document.getElementById('aqlInfoBox'), txt=document.getElementById('aqlInfoText');
-  if(state.inspectionType==='Raw Material'){ box.style.display='none'; document.getElementById('aqlThresholdStrip').style.display='none'; updateDecision(null); return; }
+  const measHint = document.getElementById('measurementSampleHint');
+  if(state.inspectionType==='Raw Material'){ box.style.display='none'; document.getElementById('aqlThresholdStrip').style.display='none'; updateDecision(null); if(measHint) measHint.textContent='(as per approved tech pack tolerance · sample: 5 pcs)'; return; }
   const lot = parseInt(state.actualQty) || 0;
   const plan = planForType(lot, state.inspectionType);
+  if(measHint) measHint.textContent = plan ? `(as per approved tech pack tolerance · sample: ${plan.n} pcs, same as AQL sample)` : '(as per approved tech pack tolerance · sample: 5 pcs)';
   if(!plan){ box.style.display='none'; document.getElementById('aqlThresholdStrip').style.display='none'; updateDecision(null); return; }
   box.style.display='block';
   document.getElementById('aqlSampleBig').textContent = plan.n + ' pcs';
@@ -795,6 +1005,17 @@ function rmRequiredTotal(row){
   const totalPcs = parseFloat(state.actualQty) || 0;
   return perPc * totalPcs;
 }
+function defaultQualityChecks(){
+  return ['Size','Colour','Finish'].map(point=>({point, status:'', remarks:''}));
+}
+/* Overall quality for a material = OK only if every check that was done is
+   OK; NOT OK if any single check failed; blank until at least one is set. */
+function rmQualityOverall(row){
+  const checks = (row.qualityChecks||[]).filter(q=>q.point);
+  const done = checks.filter(q=>q.status);
+  if(!done.length) return '';
+  return done.every(q=>q.status==='OK') ? 'OK' : 'NOT OK';
+}
 function rmStatus(row){
   const required = rmRequiredTotal(row);
   const received = parseFloat(row.received) || 0;
@@ -809,7 +1030,7 @@ function toggleRawMaterialCard(){
   document.getElementById('rawMaterialCard').style.display = isRaw ? 'block' : 'none';
   document.getElementById('navChecklist').style.display = isRaw ? 'none' : '';
   document.getElementById('navDefects').style.display = isRaw ? 'none' : '';
-  if(isRaw && state.rawMaterials.length===0){ state.rawMaterials.push({name:'', unit:'gram', perPieceQty:'', received:'', qualityStatus:'', qualityRemarks:'', expectedDate:'', photos:[]}); }
+  if(isRaw && state.rawMaterials.length===0){ state.rawMaterials.push({name:'', unit:'gram', perPieceQty:'', received:'', qualityChecks:defaultQualityChecks(), expectedDate:'', photos:[]}); }
   if(isRaw && (currentView==='checklist'||currentView==='defects')) switchView('details');
   renderRawMaterials();
   recalcAql();
@@ -836,18 +1057,27 @@ function renderRawMaterials(){
         <div class="field"><label>Required total</label><input readonly value="${required?required.toFixed(2):'—'}" style="background:#f2f1ec;color:var(--ink-soft)"></div>
         <div class="field"><label>Received so far</label><input data-i="${i}" data-f="received" type="number" step="any" value="${r.received||''}"></div>
       </div>
-      <div class="field" style="margin-bottom:8px"><span class="rm-status ${st.cls}">${st.label}</span></div>
-      <div class="grid2">
-        <div class="field"><label>Received quality</label>
-          <select data-i="${i}" data-f="qualityStatus">
-            <option value="" ${!r.qualityStatus?'selected':''}>Not checked</option>
-            <option value="OK" ${r.qualityStatus==='OK'?'selected':''}>OK</option>
-            <option value="NOT OK" ${r.qualityStatus==='NOT OK'?'selected':''}>NOT OK</option>
-          </select>
-        </div>
-        <div class="field" style="${showDate?'':'visibility:hidden'}"><label>Balance expected by</label><input data-i="${i}" data-f="expectedDate" type="date" value="${r.expectedDate||''}"></div>
+      <div class="field" style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap">
+        <span class="rm-status ${st.cls}">${st.label}</span>
+        <span class="rm-status rm-quality-overall" data-i="${i}" style="${rmQualityOverall(r)==='OK'?'background:#E1EAE0;color:#4B6B4F':rmQualityOverall(r)==='NOT OK'?'background:#F3DCDC;color:#8A3B3B':'background:#EFEFEF;color:#777'}">Quality: ${rmQualityOverall(r)||'Not checked'}</span>
       </div>
-      <div class="field"><label>Quality remarks (if NOT OK)</label><input data-i="${i}" data-f="qualityRemarks" value="${escapeHtml(r.qualityRemarks||'')}" placeholder="e.g. thickness sample se kam hai"></div>
+      <div class="field" style="${showDate?'':'visibility:hidden'}"><label>Balance expected by</label><input data-i="${i}" data-f="expectedDate" type="date" value="${r.expectedDate||''}"></div>
+      <label style="font-size:11.5px;color:var(--ink-soft);font-weight:500;display:block;margin-bottom:4px">Quality check points (jaise Size, Colour, Finish)</label>
+      <div class="rm-qc-list" data-i="${i}">
+        ${(r.qualityChecks||[]).map((q,qi)=>`
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+            <input class="rm-qc-point" data-i="${i}" data-qi="${qi}" value="${escapeHtml(q.point||'')}" placeholder="point" style="flex:1">
+            <select class="rm-qc-status" data-i="${i}" data-qi="${qi}" style="width:84px">
+              <option value="" ${!q.status?'selected':''}>—</option>
+              <option value="OK" ${q.status==='OK'?'selected':''}>OK</option>
+              <option value="NOT OK" ${q.status==='NOT OK'?'selected':''}>NOT OK</option>
+            </select>
+            <button class="remove-x rm-qc-del" data-i="${i}" data-qi="${qi}" style="padding:4px 8px">✕</button>
+          </div>
+          <input class="rm-qc-remarks" data-i="${i}" data-qi="${qi}" value="${escapeHtml(q.remarks||'')}" placeholder="remarks (optional) — jaise shade halka hai" style="margin-bottom:8px">
+        `).join('')}
+      </div>
+      <button class="btn btn-ghost rm-qc-add" data-i="${i}" type="button" style="margin-bottom:10px">+ Add quality point</button>
       <label style="font-size:11.5px;color:var(--ink-soft);font-weight:500;display:block;margin-bottom:4px">Material photos</label>
       <div class="rm-photo-grid">
         ${(r.photos||[]).map((p,pi)=>`<div class="rm-photo-tile"><img src="${p.data}"><button class="del" data-i="${i}" data-pi="${pi}" data-act="rm-photo-del">✕</button></div>`).join('')}
@@ -862,13 +1092,38 @@ function renderRawMaterials(){
     el.addEventListener(evt, ()=>{
       const i=+el.dataset.i, f=el.dataset.f;
       state.rawMaterials[i][f]=el.value; markDirty();
-      if(f==='perPieceQty'||f==='received'||f==='qualityStatus'){
+      if(f==='perPieceQty'||f==='received'){
         // Update just this row's totals/status in place — a full re-render here
         // would recreate the focused input mid-keystroke and drop the keyboard.
         updateRawMaterialRowDisplay(i);
       }
     });
   });
+  c.querySelectorAll('.rm-qc-point').forEach(el=>el.addEventListener('input', ()=>{
+    state.rawMaterials[+el.dataset.i].qualityChecks[+el.dataset.qi].point = el.value; markDirty();
+  }));
+  c.querySelectorAll('.rm-qc-remarks').forEach(el=>el.addEventListener('input', ()=>{
+    state.rawMaterials[+el.dataset.i].qualityChecks[+el.dataset.qi].remarks = el.value; markDirty();
+  }));
+  c.querySelectorAll('.rm-qc-status').forEach(el=>el.addEventListener('change', ()=>{
+    const i=+el.dataset.i, qi=+el.dataset.qi;
+    state.rawMaterials[i].qualityChecks[qi].status = el.value; markDirty();
+    const badge = c.querySelector(`.rm-quality-overall[data-i="${i}"]`);
+    if(badge){
+      const ov = rmQualityOverall(state.rawMaterials[i]);
+      badge.textContent = 'Quality: ' + (ov||'Not checked');
+      badge.style.cssText = ov==='OK' ? 'background:#E1EAE0;color:#4B6B4F' : ov==='NOT OK' ? 'background:#F3DCDC;color:#8A3B3B' : 'background:#EFEFEF;color:#777';
+    }
+  }));
+  c.querySelectorAll('.rm-qc-del').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.rawMaterials[+btn.dataset.i].qualityChecks.splice(+btn.dataset.qi,1); markDirty(); renderRawMaterials();
+  }));
+  c.querySelectorAll('.rm-qc-add').forEach(btn=>btn.addEventListener('click', ()=>{
+    const i=+btn.dataset.i;
+    if(!state.rawMaterials[i].qualityChecks) state.rawMaterials[i].qualityChecks=[];
+    state.rawMaterials[i].qualityChecks.push({point:'', status:'', remarks:''});
+    markDirty(); renderRawMaterials();
+  }));
   c.querySelectorAll('[data-act="rm-remove"]').forEach(btn=>btn.addEventListener('click', ()=>{
     state.rawMaterials.splice(+btn.dataset.i,1); markDirty(); renderRawMaterials();
   }));
@@ -898,7 +1153,7 @@ function updateRawMaterialRowDisplay(i){
   if(dateField) dateField.style.visibility = (st.percent!==null && st.percent<100) ? 'visible' : 'hidden';
 }
 document.getElementById('addRawMaterialBtn').addEventListener('click', ()=>{
-  state.rawMaterials.push({name:'', unit:'gram', perPieceQty:'', received:'', qualityStatus:'', qualityRemarks:'', expectedDate:'', photos:[]});
+  state.rawMaterials.push({name:'', unit:'gram', perPieceQty:'', received:'', qualityChecks:defaultQualityChecks(), expectedDate:'', photos:[]});
   markDirty(); renderRawMaterials();
 });
 
@@ -948,10 +1203,19 @@ function renderDefects(){
   c.innerHTML = (state.defects||[]).map((d,i)=>`
     <div class="row-item">
       <div class="top">Defect ${i+1}<button class="remove-x" data-i="${i}">Remove</button></div>
-      <div class="grid2">
-        <div class="field"><label>Description</label><input data-i="${i}" data-f="desc" value="${escapeHtml(d.desc||'')}" placeholder="e.g. plating peel"></div>
-        <div class="field"><label>Qty</label><input data-i="${i}" data-f="qty" type="number" value="${d.qty||1}"></div>
+      <div class="field">
+        <label>Description (Hinglish)</label>
+        <div class="mic-row">
+          <input data-i="${i}" data-f="desc" value="${escapeHtml(d.desc||'')}" placeholder="jaise: plating peel ho rahi hai">
+          <button class="mic-btn defect-mic" data-i="${i}" type="button" title="Dictate">🎤</button>
+        </div>
       </div>
+      <button class="btn btn-ghost defect-translate" data-i="${i}" type="button" style="margin-bottom:8px">Translate to English →</button>
+      <div class="field">
+        <label>Description (English)</label>
+        <input data-i="${i}" data-f="descEn" value="${escapeHtml(d.descEn||'')}" placeholder="Translate button use karo, ya khud type karo">
+      </div>
+      <div class="field"><label>Qty</label><input data-i="${i}" data-f="qty" type="number" value="${d.qty||1}"></div>
       <div class="seg" data-i="${i}" data-role="sev">
         <button data-v="critical" type="button" class="${d.severity==='critical'?'on-fail':''}">Critical</button>
         <button data-v="major" type="button" class="${d.severity==='major'?'on-fail':''}">Major</button>
@@ -968,10 +1232,51 @@ function renderDefects(){
   c.querySelectorAll('.remove-x').forEach(btn=>{
     btn.addEventListener('click', ()=>{ state.defects.splice(+btn.dataset.i,1); markDirty(); renderDefects(); updateTotals(); });
   });
+  c.querySelectorAll('.defect-mic').forEach(btn=>wireDefectMic(btn));
+  c.querySelectorAll('.defect-translate').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const i = +btn.dataset.i;
+    const text = (state.defects[i].desc||'').trim();
+    if(!text){ toast('Pehle Hinglish description bharo'); return; }
+    const original = btn.textContent;
+    btn.textContent='Translating…'; btn.disabled=true;
+    try{
+      const out = await translateHiToEn(text);
+      state.defects[i].descEn = out; markDirty();
+      const row = c.querySelectorAll('.row-item')[i];
+      const enInput = row && row.querySelector('input[data-f="descEn"]');
+      if(enInput) enInput.value = out;
+      toast('Translate ho gaya — check kar lo');
+    }catch(err){ toast('Translate fail hua — internet check karo'); }
+    finally{ btn.textContent=original; btn.disabled=false; }
+  }));
   updateTotals();
 }
+// A fresh mic button is created on every renderDefects() (defect rows get
+// rebuilt), so wire it directly rather than via initMic's one-time lookup.
+function wireDefectMic(btn){
+  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ btn.disabled=true; btn.title='Voice input not supported in this browser'; return; }
+  btn.addEventListener('click', ()=>{
+    if(activeRecognition){ activeRecognition.stop(); return; }
+    const i = +btn.dataset.i;
+    const rec = new SR(); rec.lang='hi-IN'; rec.continuous=false; rec.interimResults=false;
+    rec.onresult = e=>{
+      const t = e.results[0][0].transcript;
+      state.defects[i].desc = (state.defects[i].desc?state.defects[i].desc+' ':'') + t;
+      markDirty(); renderDefects();
+    };
+    rec.onend = ()=>{ activeRecognition=null; };
+    rec.onerror = e=>{
+      activeRecognition=null;
+      const msg = {'not-allowed':'Mic permission block hai.', 'service-not-allowed':'Mic permission block hai.', 'no-speech':'Kuch sunai nahi diya.', 'audio-capture':'Microphone nahi mila.', 'network':'Internet check karo.'}[e.error];
+      if(msg) toast(msg);
+    };
+    try{ rec.start(); activeRecognition=rec; btn.classList.add('rec'); }
+    catch(err){ toast('Mic start nahi ho paya'); }
+  });
+}
 document.getElementById('addDefectBtn').addEventListener('click', ()=>{
-  state.defects.push({desc:'', qty:1, severity:'minor'}); markDirty(); renderDefects();
+  state.defects.push({desc:'', descEn:'', qty:1, severity:'minor'}); markDirty(); renderDefects();
 });
 function updateTotals(){
   const {critical,major,minor,total} = countDefects();
@@ -980,6 +1285,13 @@ function updateTotals(){
   document.getElementById('totMinor').textContent=minor;
   document.getElementById('totAll').textContent=total;
   recalcAql();
+}
+function fmtDateDDMMMYYYY(d){
+  if(!d) return '';
+  const dt = new Date(d);
+  if(isNaN(dt)) return String(d);
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return String(dt.getDate()).padStart(2,'0')+'-'+months[dt.getMonth()]+'-'+dt.getFullYear();
 }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -1671,8 +1983,26 @@ async function renderAdmin(){
     <div class="report-item">
       <div>#${escapeHtml(r.reportNo||'—')} · ${escapeHtml(r.vgNo||'no VG')} · ${escapeHtml(r.style||'')}</div>
       <button class="r-open" data-id="${r.id}">Open</button>
-    </div>`).join('') : '<div class="hint">No saved reports yet.</div>';
+      <button class="r-del" data-id="${r.id}" data-label="#${escapeHtml(r.reportNo||'—')} (${escapeHtml(r.vgNo||'no VG')})" style="color:#8A3B3B">Delete</button>
+    </div>`).join('') + `<button class="btn btn-ghost" id="cleanupOldReportsBtn" type="button" style="margin-top:10px">Delete reports older than 60 days (data already Sheet me hai)</button>`
+    : '<div class="hint">No saved reports yet.</div>';
   list.querySelectorAll('.r-open').forEach(b=>b.addEventListener('click', ()=>openReport(b.dataset.id)));
+  list.querySelectorAll('.r-del').forEach(b=>b.addEventListener('click', async ()=>{
+    if(!confirm(`${b.dataset.label} is phone se delete karein? Photos bhi chali jayengi (Sheet me sirf text data rahega).`)) return;
+    await idbDelete('reports', b.dataset.id);
+    toast('Report delete ho gaya');
+    renderAdmin();
+  }));
+  const cleanupBtn = document.getElementById('cleanupOldReportsBtn');
+  if(cleanupBtn) cleanupBtn.addEventListener('click', async ()=>{
+    const cutoff = Date.now() - 60*24*60*60*1000;
+    const old = all.filter(r=>r.updatedAt < cutoff);
+    if(!old.length){ toast('60 din se purani koi saved report nahi mili'); return; }
+    if(!confirm(`${old.length} reports (60+ din purani) delete karein? Photos chali jayengi, Sheet me text data surakshit rahega.`)) return;
+    for(const r of old) await idbDelete('reports', r.id);
+    toast(`${old.length} purani reports delete ho gayi`);
+    renderAdmin();
+  });
 
   // storage usage
   if(navigator.storage && navigator.storage.estimate){
@@ -1741,6 +2071,7 @@ async function syncToSheet(rep, silent){
     buyerCode: rep.buyerCode, supplier: rep.supplier, style: rep.style, color: rep.color,
     po: rep.po, orderQty: rep.orderQty, actualQty: rep.actualQty,
     counterSample: rep.counterSample, prepackRequired: rep.prepackRequired, labTest: rep.labTest,
+    nickelTest: rep.nickelTest, pullTest: rep.pullTest, measurementTest: computeMeasurementOverall(rep),
     totalCartons: rep.totalCartons, offeredCartons: rep.offeredCartons, cartonOpenedAuto: rep.cartonOpenedAuto, cartonOpenedManual: rep.cartonOpenedManual, cartonOpenedTotal: rep.cartonOpenedTotal,
     critical, major, minor, totalDefects: total, result: getAqlResult(), defectsSummary,
     location: rep.location ? `${rep.location.lat},${rep.location.lng}` : '',
@@ -1757,9 +2088,20 @@ async function syncToSheet(rep, silent){
 let syncFlushing = false;
 async function enqueueSync(payload){
   const rec = await idbGet('meta','syncQueue');
-  const q = ((rec && rec.value) || []).filter(x=>x.reportNo!==payload.reportNo);
+  // Only replace an earlier QUEUED item of the SAME kind for the same report —
+  // a queued PDF copy must not wipe out a still-pending report-data sync, or
+  // vice versa.
+  const q = ((rec && rec.value) || []).filter(x=>!(x.reportNo===payload.reportNo && x.kind===payload.kind));
   q.push(payload);
   await idbPut('meta',{key:'syncQueue', value:q});
+}
+function blobToBase64(blob){
+  return new Promise((res,rej)=>{
+    const reader = new FileReader();
+    reader.onload = ()=>res(reader.result.split(',')[1]);
+    reader.onerror = rej;
+    reader.readAsDataURL(blob);
+  });
 }
 async function flushSyncQueue(){
   if(syncFlushing) return false;
@@ -1794,6 +2136,11 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
     ['Description', state.desc],['PO', state.po],['Challan', state.challan],
     ['Order qty', state.orderQty],['Actual/Offered qty', state.actualQty],
     ['Counter sample', state.counterSample],['Prepack required', state.prepackRequired],['Prepack qty (pcs)', state.prepackQty],['Lab test result', state.labTest],
+    ['Nickel test', state.nickelTest],['Pull test', state.pullTest],
+    ['Measurement chart', (state.measurementPoints||[]).filter(p=>p.name).map(p=>{
+      const st = measurePointStatus(p);
+      return `${p.name}: spec ${p.specified||'?'}±${p.tolerance||'?'}${p.unit} [${(p.values||[]).filter(v=>v!=='').join('/')||'no readings'}] ${st.done?(st.pass?'PASS':'FAIL'):''}`;
+    }).join(' | ')],
     ['Total carton', state.totalCartons],['Offered carton', state.offeredCartons],['Qty per carton', state.qtyPerCarton],['Carton opened — auto', state.cartonOpenedAuto],['Carton opened — manual (extra)', state.cartonOpenedManual],['Carton opened — total', state.cartonOpenedTotal],['Open carton no.', state.openCartonNo],
     ['Critical defects', critical],['Major defects', major],['Minor defects', minor],['Total defects', total],
     ['Remarks (Hinglish)', state.remarksVendor],['Remarks (English)', state.remarksBuyer],
@@ -1807,7 +2154,7 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
   const ws1 = XLSX.utils.aoa_to_sheet(summary);
   XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
 
-  const defRows = [['#','Description','Qty','Severity'], ...state.defects.map((d,i)=>[i+1,d.desc,d.qty,d.severity])];
+  const defRows = [['#','Description (Hinglish)','Description (English)','Qty','Severity'], ...state.defects.map((d,i)=>[i+1,d.desc,d.descEn,d.qty,d.severity])];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(defRows), 'Defects');
 
   const chkRows = [['Section','Item','Result']];
@@ -1817,10 +2164,11 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chkRows), 'Checklist');
 
   if(state.rawMaterials && state.rawMaterials.length){
-    const rmRows = [['Material','Unit','Qty/piece','Required total','Received','% received','Quality','Quality remarks','Balance expected by']];
+    const rmRows = [['Material','Unit','Qty/piece','Required total','Received','% received','Quality (overall)','Quality check points','Balance expected by']];
     state.rawMaterials.forEach(r=>{
       const required = rmRequiredTotal(r); const st = rmStatus(r);
-      rmRows.push([r.name, r.unit, r.perPieceQty, required?required.toFixed(2):'', r.received, st.percent!=null?st.percent+'%':'', r.qualityStatus, r.qualityRemarks, r.expectedDate]);
+      const qcText = (r.qualityChecks||[]).filter(q=>q.point).map(q=>`${q.point}: ${q.status||'—'}${q.remarks?' ('+q.remarks+')':''}`).join(' | ');
+      rmRows.push([r.name, r.unit, r.perPieceQty, required?required.toFixed(2):'', r.received, st.percent!=null?st.percent+'%':'', rmQualityOverall(r), qcText, r.expectedDate]);
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rmRows), 'Raw Material');
   }
@@ -1829,6 +2177,41 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
 });
 
 /* ---------- PDF export ---------- */
+/* Blocks marked class="pdf-atomic" (a photo + its caption) must never be cut
+   across a PDF page. Before rendering, this pushes any such block that would
+   straddle a page boundary down to the start of the next page by inserting a
+   blank spacer just above it — so a whole photo always lands on one page. */
+function insertPdfPageBreakSpacers(container, pageWpt, pageHpt){
+  container.querySelectorAll('.pdf-page-spacer').forEach(el=>el.remove());
+  const domW = container.getBoundingClientRect().width;
+  const domPageH = pageHpt * domW / pageWpt; // one PDF page's height, in this DOM's own CSS px
+  const containerTop = container.getBoundingClientRect().top;
+  const marks = Array.from(container.querySelectorAll('.pdf-atomic, .pdf-force-page'))
+    .map(el=>({el, force: el.classList.contains('pdf-force-page')}));
+  let extra = 0;
+  marks.forEach(({el, force})=>{
+    const r = el.getBoundingClientRect();
+    const top = (r.top - containerTop) + extra;
+    let push = 0;
+    if(force){
+      const rem = top % domPageH;
+      if(rem > 2) push = domPageH - rem; // always start this block at the top of a fresh page
+    } else {
+      const bottom = top + r.height;
+      if(r.height >= domPageH) return; // taller than a page — nothing to gain by moving it
+      const pageOfTop = Math.floor(top / domPageH);
+      const pageOfBottom = Math.floor((bottom - 1) / domPageH);
+      if(pageOfTop !== pageOfBottom) push = (pageOfTop + 1) * domPageH - top; // only push if it would otherwise be cut
+    }
+    if(push > 0){
+      const spacer = document.createElement('div');
+      spacer.className = 'pdf-page-spacer';
+      spacer.style.height = push + 'px';
+      el.parentNode.insertBefore(spacer, el);
+      extra += push;
+    }
+  });
+}
 async function downloadPdf(audience){
   const {critical,major,minor,total} = countDefects();
   const isRaw = state.inspectionType==='Raw Material';
@@ -1837,61 +2220,125 @@ async function downloadPdf(audience){
   const companyRec = await idbGet('meta','companyInfo');
   const company = (companyRec && companyRec.value) || {name:'',address:'',logo:''};
   const rmBlock = (state.rawMaterials && state.rawMaterials.length) ? `
-      <h3 style="font-size:13px;margin:14px 0 6px">Raw material check</h3>
-      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px">
-        <tr><th style="border:1px solid #ccc;padding:4px">Material</th><th style="border:1px solid #ccc;padding:4px">Required</th><th style="border:1px solid #ccc;padding:4px">Received</th><th style="border:1px solid #ccc;padding:4px">Status</th><th style="border:1px solid #ccc;padding:4px">Quality</th></tr>
-        ${state.rawMaterials.map(r=>{ const required=rmRequiredTotal(r); const st=rmStatus(r); return `<tr><td style="border:1px solid #ccc;padding:4px">${escapeHtml(r.name||'')}</td><td style="border:1px solid #ccc;padding:4px">${required?required.toFixed(2):''} ${escapeHtml(r.unit||'')}</td><td style="border:1px solid #ccc;padding:4px">${r.received||''} ${escapeHtml(r.unit||'')}</td><td style="border:1px solid #ccc;padding:4px">${st.label}</td><td style="border:1px solid #ccc;padding:4px">${escapeHtml(r.qualityStatus||'')}</td></tr>`; }).join('')}
-      </table>` : '';
+      <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Raw material check</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:14px">
+        <tr><th style="border:1px solid #ccc;padding:4px">Material</th><th style="border:1px solid #ccc;padding:4px">Required</th><th style="border:1px solid #ccc;padding:4px">Received</th><th style="border:1px solid #ccc;padding:4px">Status</th><th style="border:1px solid #ccc;padding:4px">Quality check points</th></tr>
+        ${state.rawMaterials.map(r=>{
+          const required=rmRequiredTotal(r); const st=rmStatus(r);
+          const qc = (r.qualityChecks||[]).filter(q=>q.point);
+          const qcText = qc.length ? qc.map(q=>`${escapeHtml(q.point)}: <b>${escapeHtml(q.status||'—')}</b>${q.remarks?' — '+escapeHtml(q.remarks):''}`).join('<br>') : '—';
+          return `<tr><td style="border:1px solid #ccc;padding:4px">${escapeHtml(r.name||'')}</td><td style="border:1px solid #ccc;padding:4px">${required?required.toFixed(2):''} ${escapeHtml(r.unit||'')}</td><td style="border:1px solid #ccc;padding:4px">${r.received||''} ${escapeHtml(r.unit||'')}</td><td style="border:1px solid #ccc;padding:4px">${st.label}</td><td style="border:1px solid #ccc;padding:4px">${qcText}</td></tr>`;
+        }).join('')}
+      </table>
+      <div style="margin-bottom:14px">
+        ${state.rawMaterials.flatMap((r)=>(r.photos||[]).map((p)=>({r,p}))).map(({r,p})=>`
+          <div class="pdf-atomic" style="display:inline-block;width:180px;margin:0 12px 12px 0;vertical-align:top">
+            <img src="${p.data}" style="width:180px;height:180px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;display:block">
+            <div style="font-size:11.5px;margin-top:4px;font-weight:700">${escapeHtml(r.name||'')}</div>
+          </div>`).join('')}
+      </div>` : '';
   const photosBlock = (state.photos && state.photos.length) ? `
-      <h3 style="font-size:13px;margin:14px 0 6px">Inspection photos (${state.photos.length})</h3>
-      <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px">
+      <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Inspection photos (${state.photos.length})</h3>
+      <div style="margin-bottom:14px">
         ${state.photos.map(p=>`
-          <div style="width:250px;page-break-inside:avoid">
+          <div class="pdf-atomic" style="margin-bottom:16px">
             <img src="${p.data}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;display:block">
-            <div style="font-size:12px;color:#14181F;margin-top:5px;text-align:center;font-weight:600">${escapeHtml(p.caption||'(no comment)')}</div>
+            <div style="font-size:13px;color:#14181F;margin-top:5px;font-weight:700">${escapeHtml(p.caption||'(no comment)')}</div>
           </div>`).join('')}
       </div>` : '';
   const counterSampleBlock = (state.counterSample==='Yes' && state.counterSamplePhoto) ? `
-      <h3 style="font-size:13px;margin:14px 0 6px">Counter Sample vs Bulk Production comparison</h3>
-      <img src="${state.counterSamplePhoto}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;margin-bottom:14px">` : '';
+      <div class="pdf-atomic" style="margin-bottom:14px">
+        <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Counter Sample vs Bulk Production comparison</h3>
+        <img src="${state.counterSamplePhoto}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px">
+      </div>` : '';
   const prepackBlock = (state.prepackRequired==='Yes' && state.prepackPhoto) ? `
-      <h3 style="font-size:13px;margin:14px 0 6px">Prepack (${escapeHtml(state.prepackQty||'')} pcs)</h3>
-      <img src="${state.prepackPhoto}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;margin-bottom:14px">` : '';
+      <div class="pdf-atomic" style="margin-bottom:14px">
+        <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Prepack (${escapeHtml(state.prepackQty||'')} pcs)</h3>
+        <img src="${state.prepackPhoto}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px">
+      </div>` : '';
   const letterheadBlock = (company.name || company.address || company.logo) ? `
       <div style="display:flex;align-items:center;gap:14px;border-bottom:2px solid #14181F;padding-bottom:12px;margin-bottom:14px">
         ${company.logo?`<img src="${company.logo}" style="height:50px;max-width:140px;object-fit:contain">`:''}
         <div>
-          ${company.name?`<div style="font-size:16px;font-weight:700">${escapeHtml(company.name)}</div>`:''}
-          ${company.address?`<div style="font-size:10.5px;color:#555;white-space:pre-wrap">${escapeHtml(company.address)}</div>`:''}
+          ${company.name?`<div style="font-size:17px;font-weight:700">${escapeHtml(company.name)}</div>`:''}
+          ${company.address?`<div style="font-size:11.5px;color:#555;white-space:pre-wrap;font-weight:600">${escapeHtml(company.address)}</div>`:''}
         </div>
       </div>` : '';
   const resultVal = getAqlResult();
   const resultColors = {PASS:['#E1EAE0','#4B6B4F'], FAIL:['#F3DED5','#A44A34'], 'ON HOLD':['#F1E3C6','#6B4A17']};
   const rc = resultColors[resultVal] || ['#DEE5EC','#3E5266'];
-  const resultBlock = `<div style="display:inline-block;padding:8px 16px;border-radius:6px;background:${rc[0]};color:${rc[1]};font-weight:700;font-size:15px;margin-bottom:14px">Result: ${resultVal || 'Not applicable'}</div>`;
+  const resultBlock = `<div style="display:inline-block;padding:8px 16px;border-radius:6px;background:${rc[0]};color:${rc[1]};font-weight:700;font-size:16px;margin-bottom:14px">Result: ${resultVal || 'Not applicable'}</div>`;
+  const simpleTests = [
+    state.nickelTest ? ['Nickel release test','EN 1811 spot/DMG test · sample 3 pcs', state.nickelTest, state.nickelTestPhoto] : null,
+    state.pullTest ? ['Pull / tension test','ASTM F963 / 16 CFR 1500.51 · 15 lbf, 10 sec · sample 3 pcs', state.pullTest, state.pullTestPhoto] : null,
+  ].filter(Boolean);
+  const validPoints = (state.measurementPoints||[]).filter(p=>p.name && measurePointStatus(p).done);
+  const measurementOverall = document.getElementById('measurementOverallResult') ? document.getElementById('measurementOverallResult').value : '';
+  const hasExtra = simpleTests.length || validPoints.length;
+  const nPieces = Math.max(1, parseInt(state.measurementPieces)||3);
+  const measureTableBlock = validPoints.length ? `
+      <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Measurement Chart ${measurementOverall?`— Overall: ${escapeHtml(measurementOverall)}`:''}</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">
+        <tr><th style="border:1px solid #ccc;padding:5px">Point</th><th style="border:1px solid #ccc;padding:5px">Specified</th><th style="border:1px solid #ccc;padding:5px">Tolerance</th>
+          ${Array.from({length:nPieces}).map((_,i)=>`<th style="border:1px solid #ccc;padding:5px">P${i+1}</th>`).join('')}
+          <th style="border:1px solid #ccc;padding:5px">Result</th></tr>
+        ${validPoints.map(p=>{
+          const st = measurePointStatus(p);
+          return `<tr><td style="border:1px solid #ccc;padding:5px">${escapeHtml(p.name)}</td><td style="border:1px solid #ccc;padding:5px">${escapeHtml(p.specified)} ${escapeHtml(p.unit)}</td><td style="border:1px solid #ccc;padding:5px">±${escapeHtml(p.tolerance)} ${escapeHtml(p.unit)}</td>
+            ${Array.from({length:nPieces}).map((_,i)=>`<td style="border:1px solid #ccc;padding:5px">${escapeHtml(p.values[i]!=null?p.values[i]:'')}</td>`).join('')}
+            <td style="border:1px solid #ccc;padding:5px;font-weight:700">${st.pass?'Pass':'Fail'}</td></tr>`;
+        }).join('')}
+      </table>
+      <div style="margin-bottom:14px">
+        ${validPoints.filter(p=>p.photo).map(p=>`
+          <div class="pdf-atomic" style="display:inline-block;width:180px;margin:0 12px 12px 0;vertical-align:top">
+            <img src="${p.photo}" style="width:180px;height:180px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;display:block">
+            <div style="font-size:11.5px;margin-top:4px;font-weight:700">${escapeHtml(p.name)}</div>
+          </div>`).join('')}
+      </div>` : '';
+  const simpleTestsBlock = simpleTests.length ? `
+      <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Nickel / Pull Test</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px">
+        <tr><th style="border:1px solid #ccc;padding:6px">Test</th><th style="border:1px solid #ccc;padding:6px">Standard / sample</th><th style="border:1px solid #ccc;padding:6px">Result</th></tr>
+        ${simpleTests.map(([name,std,res])=>`<tr><td style="border:1px solid #ccc;padding:6px">${escapeHtml(name)}</td><td style="border:1px solid #ccc;padding:6px">${escapeHtml(std)}</td><td style="border:1px solid #ccc;padding:6px;font-weight:700">${escapeHtml(res)}</td></tr>`).join('')}
+      </table>
+      <div style="margin-bottom:14px">
+        ${simpleTests.filter(t=>t[3]).map(([name,,,photo])=>`
+          <div class="pdf-atomic" style="display:inline-block;width:180px;margin:0 12px 12px 0;vertical-align:top">
+            <img src="${photo}" style="width:180px;height:180px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;display:block">
+            <div style="font-size:11.5px;margin-top:4px;font-weight:700">${escapeHtml(name)}</div>
+          </div>`).join('')}
+      </div>` : '';
+  const labTestsPageBlock = hasExtra ? `
+      <div class="pdf-force-page">
+      <h2 style="margin:0 0 4px">Additional Tests</h2>
+      <div style="font-size:13px;color:#555;margin-bottom:14px">Report No ${escapeHtml(state.reportNo)} · VG ${escapeHtml(state.vgNo)} — buyer-required tests done during this inspection</div>
+      ${measureTableBlock}
+      ${simpleTestsBlock}
+      </div>` : '';
   const sheet = document.getElementById('printSheet');
   sheet.innerHTML = `
-    <div style="font-family:Arial,sans-serif;padding:24px;width:760px;color:#14181F">
+    <div style="font-family:Arial,sans-serif;padding:24px;width:760px;color:#14181F;font-weight:600;font-size:13px">
       ${letterheadBlock}
       <h2 style="margin:0 0 4px">Inspection Report</h2>
-      <div style="font-size:12px;color:#555;margin-bottom:14px">Report No ${escapeHtml(state.reportNo)} · ${escapeHtml(state.date)} · VG ${escapeHtml(state.vgNo)} · ${escapeHtml(state.inspectionType||'')}</div>
+      <div style="font-size:13px;color:#555;margin-bottom:14px;font-weight:600">Report No ${escapeHtml(state.reportNo)} · ${fmtDateDDMMMYYYY(state.date)} · VG ${escapeHtml(state.vgNo)} · ${escapeHtml(state.inspectionType||'')}</div>
       ${resultBlock}
-      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px">
         ${[['Inspector',state.inspector],['Inspection type',state.inspectionType],['Location', state.location?`${state.location.lat.toFixed(5)}, ${state.location.lng.toFixed(5)}`:''],['Buyer code',state.buyerCode],['Supplier',state.supplier],['Style',state.style],['Colour',state.color],['PO',state.po],['Order qty',state.orderQty],['Actual/Offered qty',state.actualQty],['Sample size',plan?plan.n:''],['Counter sample',state.counterSample],['Prepack required',state.prepackRequired],['Prepack qty (pcs)',state.prepackQty],['Lab test result',state.labTest],['Total carton',state.totalCartons],['Offered carton',state.offeredCartons],['Qty per carton',state.qtyPerCarton],['Carton opened (auto+manual)',`${state.cartonOpenedAuto||0} + ${state.cartonOpenedManual||0} = ${state.cartonOpenedTotal||0}`],['Open carton no.',state.openCartonNo]]
           .map(([k,v])=>`<tr><td style="border:1px solid #ccc;padding:5px;font-weight:600;width:140px">${k}</td><td style="border:1px solid #ccc;padding:5px">${escapeHtml(String(v||''))}</td></tr>`).join('')}
       </table>
       ${rmBlock}
       ${isRaw ? '' : `
-      <h3 style="font-size:13px;margin:14px 0 6px">Defects — Critical ${critical} / Major ${major} / Minor ${minor} / Total ${total}</h3>
-      ${plan? `<div style="font-size:11px;margin-bottom:8px">${plan.hundred?'100% Inspection (Pilot Run)':'AQL Level II · Code '+plan.code} · Sample ${plan.n} · Critical Ac/Re ${plan.critical.join('/')} · Major Ac/Re ${plan.major.join('/')} · Minor Ac/Re ${plan.minor.join('/')}</div>`:''}
-      <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px">
+      <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Defects — Critical ${critical} / Major ${major} / Minor ${minor} / Total ${total}</h3>
+      ${plan? `<div style="font-size:12.5px;margin-bottom:8px;font-weight:600">${plan.hundred?'100% Inspection (Pilot Run)':'AQL Level II · Code '+plan.code} · Sample ${plan.n} · Critical Ac/Re ${plan.critical.join('/')} · Major Ac/Re ${plan.major.join('/')} · Minor Ac/Re ${plan.minor.join('/')}</div>`:''}
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:14px">
         <tr><th style="border:1px solid #ccc;padding:4px">#</th><th style="border:1px solid #ccc;padding:4px">Description</th><th style="border:1px solid #ccc;padding:4px">Qty</th><th style="border:1px solid #ccc;padding:4px">Severity</th></tr>
-        ${state.defects.map((d,i)=>`<tr><td style="border:1px solid #ccc;padding:4px">${i+1}</td><td style="border:1px solid #ccc;padding:4px">${escapeHtml(d.desc||'')}</td><td style="border:1px solid #ccc;padding:4px">${d.qty||1}</td><td style="border:1px solid #ccc;padding:4px">${d.severity||''}</td></tr>`).join('')}
+        ${state.defects.map((d,i)=>`<tr><td style="border:1px solid #ccc;padding:4px">${i+1}</td><td style="border:1px solid #ccc;padding:4px">${escapeHtml(isHindiVendor ? (d.desc||'') : (d.descEn||d.desc||''))}</td><td style="border:1px solid #ccc;padding:4px">${d.qty||1}</td><td style="border:1px solid #ccc;padding:4px">${d.severity||''}</td></tr>`).join('')}
       </table>`}
-      <h3 style="font-size:13px;margin:14px 0 6px">Remarks</h3>
-      <div style="font-size:12px;white-space:pre-wrap;margin-bottom:10px">${escapeHtml(isHindiVendor? state.remarksVendor : state.remarksBuyer)}</div>
-      <h3 style="font-size:13px;margin:14px 0 6px">Action to be taken</h3>
-      <div style="font-size:12px;white-space:pre-wrap;margin-bottom:14px">${escapeHtml(isHindiVendor? state.actionVendor : state.actionBuyer)}</div>
+      <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Remarks</h3>
+      <div style="font-size:13px;white-space:pre-wrap;margin-bottom:10px;font-weight:600">${escapeHtml(isHindiVendor? state.remarksVendor : state.remarksBuyer)}</div>
+      <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Action to be taken</h3>
+      <div style="font-size:13px;white-space:pre-wrap;margin-bottom:14px;font-weight:600">${escapeHtml(isHindiVendor? state.actionVendor : state.actionBuyer)}</div>
       ${counterSampleBlock}
       ${prepackBlock}
       ${photosBlock}
@@ -1899,17 +2346,19 @@ async function downloadPdf(audience){
         ${['inspector','production','merchant','vendor','buyer'].map(k=>{
           const meta = (state.sigMeta&&state.sigMeta[k])||{name:'',designation:''};
           if(!state.signatures[k] && !meta.name && !meta.designation) return '';
-          return `<div style="text-align:center;min-width:120px">${state.signatures[k]?`<img src="${state.signatures[k]}" style="height:55px">`:'<div style="height:55px"></div>'}<div style="font-size:11px;border-top:1px solid #999;margin-top:4px;padding-top:3px">${escapeHtml(meta.name||'')}${meta.designation?' — '+escapeHtml(meta.designation):''}</div><div style="font-size:9px;color:#777;text-transform:capitalize">${k}</div></div>`;
+          return `<div style="text-align:center;min-width:120px">${state.signatures[k]?`<img src="${state.signatures[k]}" style="height:55px">`:'<div style="height:55px"></div>'}<div style="font-size:12px;border-top:1px solid #999;margin-top:4px;padding-top:3px;font-weight:700">${escapeHtml(meta.name||'')}${meta.designation?' — '+escapeHtml(meta.designation):''}</div><div style="font-size:10px;color:#777;text-transform:capitalize;font-weight:600">${k}</div></div>`;
         }).join('')}
       </div>
+      ${labTestsPageBlock}
     </div>`;
   sheet.style.display='block';
+  const pdf = new jspdf.jsPDF('p','pt','a3'); // bigger page = everything renders larger/clearer, prints fine on A3
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  insertPdfPageBreakSpacers(sheet.firstElementChild, pageW, pageH);
   const canvas = await html2canvas(sheet.firstElementChild, {scale:2});
   sheet.style.display='none';
 
-  const pdf = new jspdf.jsPDF('p','pt','a4');
-  const pageW = pdf.internal.pageSize.getWidth();
-  const pageH = pdf.internal.pageSize.getHeight();
   const imgW = pageW;
   const imgH = canvas.height * imgW / canvas.width;
   const imgData = canvas.toDataURL('image/jpeg',0.92);
@@ -1925,8 +2374,18 @@ async function downloadPdf(audience){
     heightLeft -= pageH;
   }
 
-  const fileName = `${state.vgNo||state.reportNo||'report'}_${audience}.pdf`;
+  // Includes the Report No (already type-prefixed: INL-2, FIN-1, RM-3 etc.)
+  // and the inspection type in full, so a VG with several report types never
+  // overwrites a different one — in the filename, in Drive, or on the phone.
+  const typeSlug = (state.inspectionType||'General').replace(/[^a-zA-Z0-9]+/g,'');
+  const fileName = `${state.vgNo||'VG'}_${state.reportNo||'report'}_${typeSlug}_${audience}.pdf`;
   const pdfBlob = pdf.output('blob');
+  // A copy always goes to the team's Google Drive too — queued the same
+  // offline-safe way as report data, so a missing-signal moment never loses it.
+  blobToBase64(pdfBlob).then(pdfBase64=>{
+    enqueueSync({kind:'reportPdf', reportNo: state.reportNo, vgNo: state.vgNo, audience, filename: fileName, pdfBase64})
+      .then(()=>flushSyncQueue()).catch(()=>{});
+  }).catch(()=>{});
   const pdfFile = new File([pdfBlob], fileName, {type:'application/pdf'});
   if(navigator.canShare && navigator.canShare({files:[pdfFile]})){
     try{
