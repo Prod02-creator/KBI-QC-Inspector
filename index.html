@@ -477,7 +477,9 @@ textarea{min-height:64px;resize:vertical}
       <div id="reportsList"></div>
     </div>
     <div class="card">
-      <h2><span class="n">All</span>All team reports (from Sheet)</h2>
+      <h2><span class="n">All</span>All team reports (from Sheet)
+        <button class="btn btn-ghost" id="retryAllTeamReportsBtn" type="button" style="float:right;padding:4px 10px;font-size:12px">Retry</button>
+      </h2>
       <div class="section-note">Poori team ke saare devices se aaye reports — read-only, edit karne ke liye us device par jaana hoga jahan wo save hua tha.</div>
       <div id="allReportsList" class="hint">Loading…</div>
     </div>
@@ -2015,29 +2017,56 @@ async function renderAdmin(){
   }
   renderAllTeamReports();
 }
+document.getElementById('retryAllTeamReportsBtn').addEventListener('click', renderAllTeamReports);
+let teamReportsLoadToken = 0;
 async function renderAllTeamReports(){
   const el = document.getElementById('allReportsList');
-  const rec = await idbGet('meta','sheetUrl');
-  const url = rec && rec.value;
-  if(!url){ el.textContent='Google Sheet URL set karo pehle (neeche) — tabhi poori team ke reports yahan dikhenge.'; return; }
-  let resp;
+  if(!el) return;
+  // Every call gets its own token — if the Admin tab is reopened while an
+  // earlier slow call is still in flight, only the LATEST call is allowed to
+  // write to the DOM, so a stale response can never overwrite a fresh one
+  // (and this box can never get stuck re-showing an old "Loading…").
+  const myToken = ++teamReportsLoadToken;
+  el.textContent = 'Loading…';
   try{
+    const rec = await idbGet('meta','sheetUrl');
+    const url = rec && rec.value;
+    if(myToken!==teamReportsLoadToken) return;
+    if(!url){ el.textContent='Google Sheet URL set karo pehle (neeche) — tabhi poori team ke reports yahan dikhenge.'; return; }
+
     const sep = url.includes('?') ? '&' : '?';
-    resp = await fetch(url+sep+'type=allReports');
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), 20000);
+    let resp;
+    try{
+      resp = await fetch(url+sep+'type=allReports', {signal: controller.signal});
+    }catch(err){
+      if(myToken!==teamReportsLoadToken) return;
+      el.textContent = (err && err.name==='AbortError')
+        ? 'Sheet se 20 second me jawab nahi mila (bahut slow ya atak gaya) — "All team reports" niche dubara khol ke retry karo.'
+        : 'Sheet se connect nahi ho paya ('+(err && err.message || 'network')+'). Sheet URL sahi hai? Web App "Anyone" access par deploy hai?';
+      return;
+    } finally { clearTimeout(timer); }
+    if(myToken!==teamReportsLoadToken) return;
+
+    if(!resp.ok){ el.textContent='Sheet ne error diya (HTTP '+resp.status+').'; return; }
+    let data;
+    try{ data = await resp.json(); }
+    catch(err){ el.textContent='Sheet se jawab padha nahi ja saka — Apps Script ka NEW VERSION deploy kiya hai? (Deploy > Manage deployments > New version)'; return; }
+    if(myToken!==teamReportsLoadToken) return;
+
+    if(!data || !Array.isArray(data.reports)){ el.textContent='Purana Apps Script deployed hai (allReports support nahi) — naya AppsScript.gs paste karke "New version" deploy karo.'; return; }
+    const reports = data.reports;
+    if(!reports.length){ el.textContent='Abhi tak Sheet me koi report sync nahi hui.'; return; }
+    el.innerHTML = reports.map(r=>`
+      <div class="report-item">
+        <div>#${escapeHtml(r.reportNo||'—')} · VG ${escapeHtml(r.vgNo||'—')} · ${escapeHtml(r.inspectionType||'')} · ${escapeHtml(r.inspector||'?')} · ${escapeHtml(r.date||'')} ${r.result?'· <b>'+escapeHtml(r.result)+'</b>':''}</div>
+      </div>`).join('');
   }catch(err){
-    el.textContent='Sheet se connect nahi ho paya ('+(err && err.message || 'network')+'). Sheet URL sahi hai? Web App "Anyone" access par deploy hai?'; return;
+    // Catch-all: whatever unexpected thing went wrong, the box always ends
+    // up with a readable message instead of staying on "Loading…" forever.
+    if(myToken===teamReportsLoadToken) el.textContent = 'Kuch galat hua — "All team reports" dubara khol ke retry karo. ('+(err && err.message || 'error')+')';
   }
-  if(!resp.ok){ el.textContent='Sheet ne error diya (HTTP '+resp.status+').'; return; }
-  let data;
-  try{ data = await resp.json(); }
-  catch(err){ el.textContent='Sheet se jawab padha nahi ja saka — Apps Script ka NEW VERSION deploy kiya hai? (Deploy > Manage deployments > New version)'; return; }
-  if(!data || !Array.isArray(data.reports)){ el.textContent='Purana Apps Script deployed hai (allReports support nahi) — naya AppsScript.gs paste karke "New version" deploy karo.'; return; }
-  const reports = data.reports;
-  if(!reports.length){ el.textContent='Abhi tak Sheet me koi report sync nahi hui.'; return; }
-  el.innerHTML = reports.map(r=>`
-    <div class="report-item">
-      <div>#${escapeHtml(r.reportNo||'—')} · VG ${escapeHtml(r.vgNo||'—')} · ${escapeHtml(r.inspectionType||'')} · ${escapeHtml(r.inspector||'?')} · ${escapeHtml(r.date||'')} ${r.result?'· <b>'+escapeHtml(r.result)+'</b>':''}</div>
-    </div>`).join('');
 }
 document.getElementById('saveSheetUrlBtn').addEventListener('click', async ()=>{
   const url = document.getElementById('f_sheetUrl').value.trim();
