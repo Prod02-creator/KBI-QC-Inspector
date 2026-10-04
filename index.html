@@ -195,30 +195,12 @@ textarea{min-height:64px;resize:vertical}
         <div class="hint" style="margin-top:2px;color:#6B4A17">pieces to pick out of Actual/Offered Qty and check</div>
         <div class="hint mono" id="aqlInfoText" style="color:var(--ink);margin-top:8px;border-top:1px solid rgba(20,24,31,.12);padding-top:8px"></div>
       </div>
-      <div class="grid3">
-        <div class="field"><label>Counter sample</label>
-          <select id="f_counterSample">
-            <option value="">Select…</option>
-            <option value="Yes">Yes</option>
-            <option value="No">No</option>
-          </select>
-        </div>
-        <div class="field"><label>Prepack required</label>
-          <select id="f_prepackRequired">
-            <option value="">Select…</option>
-            <option value="Yes">Yes</option>
-            <option value="No">No</option>
-          </select>
-        </div>
-        <div class="field"><label>Lab test result</label>
-          <select id="f_labTest">
-            <option value="">Select…</option>
-            <option value="Pass">Pass</option>
-            <option value="Fail">Fail</option>
-            <option value="Pending">Pending</option>
-            <option value="Not Applicable">Not Applicable</option>
-          </select>
-        </div>
+      <div class="field"><label>Counter sample</label>
+        <select id="f_counterSample">
+          <option value="">Select…</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
       </div>
       <div class="field" id="counterSamplePhotoBox" style="display:none">
         <label>Counter Sample vs Bulk Production comparison photo</label>
@@ -226,14 +208,35 @@ textarea{min-height:64px;resize:vertical}
         <div class="file-drop" id="counterSamplePhotoDrop">Tap to add comparison photo</div>
         <input type="file" id="counterSamplePhotoInput" accept="image/*" capture="environment" style="display:none">
       </div>
-      <div class="field" id="prepackBox" style="display:none">
-        <label>Prepack qty (pcs per prepack)</label>
-        <input id="f_prepackQty" type="number" placeholder="e.g. 3" style="margin-bottom:10px">
-        <label>Prepack photo</label>
-        <div id="prepackPhotoPreview" style="margin-bottom:8px"></div>
-        <div class="file-drop" id="prepackPhotoDrop">Tap to add prepack photo</div>
-        <input type="file" id="prepackPhotoInput" accept="image/*" capture="environment" style="display:none">
+      <div id="finalOnlyFieldsBox">
+        <div class="grid2">
+          <div class="field"><label>Prepack required</label>
+            <select id="f_prepackRequired">
+              <option value="">Select…</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+          <div class="field"><label>Lab test result</label>
+            <select id="f_labTest">
+              <option value="">Select…</option>
+              <option value="Pass">Pass</option>
+              <option value="Fail">Fail</option>
+              <option value="Pending">Pending</option>
+              <option value="Not Applicable">Not Applicable</option>
+            </select>
+          </div>
+        </div>
+        <div class="field" id="prepackBox" style="display:none">
+          <label>Prepack qty (pcs per prepack)</label>
+          <input id="f_prepackQty" type="number" placeholder="e.g. 3" style="margin-bottom:10px">
+          <label>Prepack photo</label>
+          <div id="prepackPhotoPreview" style="margin-bottom:8px"></div>
+          <div class="file-drop" id="prepackPhotoDrop">Tap to add prepack photo</div>
+          <input type="file" id="prepackPhotoInput" accept="image/*" capture="environment" style="display:none">
+        </div>
       </div>
+      <div class="hint" id="finalOnlyHiddenHint" style="display:none">Prepack aur Lab test sirf Pre-Final/Final inspection me dikhte hain.</div>
     </div>
 
     <div class="card" id="labTestsCard">
@@ -676,6 +679,7 @@ function loadFormFromState(){
   renderRawMaterials();
   toggleRawMaterialCard();
   toggleCartonCard();
+  toggleFinalOnlyFields();
   toggleCounterSamplePhotoBox();
   renderCounterSamplePhoto();
   togglePrepackBox();
@@ -729,6 +733,7 @@ function bindFieldListeners(){
       if(k==='inspectionType'){
         toggleRawMaterialCard();
         toggleCartonCard();
+        toggleFinalOnlyFields();
         if(!reportNoLocked){
           nextReportNo(state.inspectionType).then(no=>{ state.reportNo=no; document.getElementById('f_reportNo').value=no; });
         }
@@ -949,6 +954,23 @@ function recalcCartonOpened(){
   const elTotal = document.getElementById('f_cartonOpenedTotal'); if(elTotal) elTotal.value = totalOpened;
 }
 const MIDLINE_TO_FINAL_TYPES = ['Pre-Final','Final'];
+/* Prepack, Lab test, and the Nickel/Pull/Measurement card are shipment-stage
+   checks — not relevant yet at Raw Material/Pilot Run/Inline/DUPRO, so they
+   stay hidden until the inspection reaches Pre-Final/Final (or a type where
+   they're always relevant: Random Check, Container Loading). */
+const FINAL_ONLY_TYPES = ['Pre-Final','Final','Random Check','Container Loading'];
+function toggleFinalOnlyFields(){
+  // Hides the UI only — any answer already typed stays saved in the report
+  // (switching the type back and forth never loses data); the PDF/Excel/Sheet
+  // output itself checks isFinalOnlyStage() so a hidden answer never leaks
+  // into a Pilot Run/Inline report either.
+  const show = FINAL_ONLY_TYPES.includes(state.inspectionType);
+  document.getElementById('finalOnlyFieldsBox').style.display = show ? 'block' : 'none';
+  document.getElementById('finalOnlyHiddenHint').style.display = show ? 'none' : 'block';
+  // Nickel/Pull/Measurement checks happen at every stage, not just Final —
+  // that card always stays visible regardless of inspection type.
+}
+function isFinalOnlyStage(){ return FINAL_ONLY_TYPES.includes(state.inspectionType); }
 function toggleCartonCard(){
   const show = MIDLINE_TO_FINAL_TYPES.includes(state.inspectionType);
   document.getElementById('cartonCard').style.display = show ? 'block' : 'none';
@@ -1295,7 +1317,7 @@ function fmtDateDDMMMYYYY(d){
   const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return String(dt.getDate()).padStart(2,'0')+'-'+months[dt.getMonth()]+'-'+dt.getFullYear();
 }
-function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ---------- Photos ---------- */
 /* Reads the EXIF Orientation tag directly from the JPEG bytes (values 1-8) so
@@ -2164,7 +2186,8 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
     ['Buyer code', state.buyerCode],['Supplier', state.supplier],['Style', state.style],['Color', state.color],
     ['Description', state.desc],['PO', state.po],['Challan', state.challan],
     ['Order qty', state.orderQty],['Actual/Offered qty', state.actualQty],
-    ['Counter sample', state.counterSample],['Prepack required', state.prepackRequired],['Prepack qty (pcs)', state.prepackQty],['Lab test result', state.labTest],
+    ['Counter sample', state.counterSample],
+    ...(isFinalOnlyStage() ? [['Prepack required', state.prepackRequired],['Prepack qty (pcs)', state.prepackQty],['Lab test result', state.labTest]] : []),
     ['Nickel test', state.nickelTest],['Pull test', state.pullTest],
     ['Measurement chart', (state.measurementPoints||[]).filter(p=>p.name).map(p=>{
       const st = measurePointStatus(p);
@@ -2280,7 +2303,7 @@ async function downloadPdf(audience){
         <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Counter Sample vs Bulk Production comparison</h3>
         <img src="${state.counterSamplePhoto}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px">
       </div>` : '';
-  const prepackBlock = (state.prepackRequired==='Yes' && state.prepackPhoto) ? `
+  const prepackBlock = (isFinalOnlyStage() && state.prepackRequired==='Yes' && state.prepackPhoto) ? `
       <div class="pdf-atomic" style="margin-bottom:14px">
         <h3 style="font-size:14.5px;margin:14px 0 6px;font-weight:700">Prepack (${escapeHtml(state.prepackQty||'')} pcs)</h3>
         <img src="${state.prepackPhoto}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px">
@@ -2353,7 +2376,9 @@ async function downloadPdf(audience){
       <div style="font-size:13px;color:#555;margin-bottom:14px;font-weight:600">Report No ${escapeHtml(state.reportNo)} · ${fmtDateDDMMMYYYY(state.date)} · VG ${escapeHtml(state.vgNo)} · ${escapeHtml(state.inspectionType||'')}</div>
       ${resultBlock}
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px">
-        ${[['Inspector',state.inspector],['Inspection type',state.inspectionType],['Location', state.location?`${state.location.lat.toFixed(5)}, ${state.location.lng.toFixed(5)}`:''],['Buyer code',state.buyerCode],['Supplier',state.supplier],['Style',state.style],['Colour',state.color],['PO',state.po],['Order qty',state.orderQty],['Actual/Offered qty',state.actualQty],['Sample size',plan?plan.n:''],['Counter sample',state.counterSample],['Prepack required',state.prepackRequired],['Prepack qty (pcs)',state.prepackQty],['Lab test result',state.labTest],['Total carton',state.totalCartons],['Offered carton',state.offeredCartons],['Qty per carton',state.qtyPerCarton],['Carton opened (auto+manual)',`${state.cartonOpenedAuto||0} + ${state.cartonOpenedManual||0} = ${state.cartonOpenedTotal||0}`],['Open carton no.',state.openCartonNo]]
+        ${[['Inspector',state.inspector],['Inspection type',state.inspectionType],['Location', state.location?`${state.location.lat.toFixed(5)}, ${state.location.lng.toFixed(5)}`:''],['Buyer code',state.buyerCode],['Supplier',state.supplier],['Style',state.style],['Colour',state.color],['PO',state.po],['Order qty',state.orderQty],['Actual/Offered qty',state.actualQty],['Sample size',plan?plan.n:''],['Counter sample',state.counterSample],
+          isFinalOnlyStage()?['Prepack required',state.prepackRequired]:null, isFinalOnlyStage()?['Prepack qty (pcs)',state.prepackQty]:null, isFinalOnlyStage()?['Lab test result',state.labTest]:null,
+          ['Total carton',state.totalCartons],['Offered carton',state.offeredCartons],['Qty per carton',state.qtyPerCarton],['Carton opened (auto+manual)',`${state.cartonOpenedAuto||0} + ${state.cartonOpenedManual||0} = ${state.cartonOpenedTotal||0}`],['Open carton no.',state.openCartonNo]].filter(Boolean)
           .map(([k,v])=>`<tr><td style="border:1px solid #ccc;padding:5px;font-weight:600;width:140px">${k}</td><td style="border:1px solid #ccc;padding:5px">${escapeHtml(String(v||''))}</td></tr>`).join('')}
       </table>
       ${rmBlock}
