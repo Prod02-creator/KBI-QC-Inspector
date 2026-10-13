@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- KBI QC Inspector (c) KBI Export. All rights reserved. Proprietary software for KBI Export team use only. Copying, redistribution or resale is prohibited. -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -309,7 +310,7 @@ textarea{min-height:64px;resize:vertical}
 
   <!-- ===== VIEW: CHECKLIST ===== -->
   <div class="view" id="view-checklist">
-    <div class="card">
+    <div class="card" id="checklistACard">
       <h2><span class="n">A</span>General checks</h2>
       <div id="checklistA"></div>
     </div>
@@ -471,6 +472,15 @@ textarea{min-height:64px;resize:vertical}
       <button class="btn btn-primary" id="setReportNoFloorBtn">Set (PIN)</button>
     </div>
     <div class="card">
+      <h2><span class="n">Sc</span>Security</h2>
+      <div class="hint" id="securityStatus">Checking…</div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-ghost" id="changePinBtn" type="button">Change Admin PIN</button>
+        <button class="btn btn-ghost" id="setTeamCodeBtn" type="button">Team code (is device par)</button>
+      </div>
+      <div class="section-note">Team code Google Sheet ke Apps Script me hi rehta hai (Sheet menu: KBI QC &gt; Generate new team access code) — GitHub me kahin nahi. Bina code ke koi Sheet ka data nahi padh/bhej sakta.</div>
+    </div>
+    <div class="card">
       <h2><span class="n">St</span>Storage</h2>
       <div class="storage-bar"><div id="storageUsageBar" style="width:0%"></div></div>
       <div class="hint" id="storageUsageStatus">Checking…</div>
@@ -517,6 +527,17 @@ textarea{min-height:64px;resize:vertical}
   <div class="modal-box"><div id="msgModalText" style="margin-bottom:12px;font-size:13.5px"></div><button class="btn btn-primary" id="msgOk" style="width:100%">OK</button></div>
 </div>
 
+<script>
+/* Domain lock: this app only runs from KBI's own hosting (or locally). A copy re-hosted elsewhere shows a notice and stops. */
+(function(){
+  var h=location.hostname.toLowerCase();
+  var ok = location.protocol==='file:' || h==='localhost' || h==='127.0.0.1' || h==='prod02-creator.github.io';
+  if(!ok){
+    document.body.innerHTML='<div style="font-family:sans-serif;padding:40px;text-align:center"><h2>KBI QC Inspector</h2><p>Ye app sirf KBI Export ki authorised link par chalta hai.<br>This is proprietary software of KBI Export. Unauthorised copy.</p></div>';
+    throw new Error('Unauthorised host');
+  }
+})();
+</script>
 <script>
 /* =========================================================
    KBI QC INSPECTOR — built from scratch (no code reused from
@@ -629,7 +650,7 @@ function idbDelete(store,key){ return new Promise((res,rej)=>{ const tx=db.trans
 /* ---------- UI helpers ---------- */
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
 function showMsg(text){ return new Promise(res=>{ const ov=document.getElementById('msgModalOv'); document.getElementById('msgModalText').textContent=text; ov.classList.add('show'); const ok=document.getElementById('msgOk'); function done(){ ov.classList.remove('show'); ok.removeEventListener('click',done); res(); } ok.addEventListener('click',done); }); }
-function askPin(title,msg){ return new Promise(res=>{ const ov=document.getElementById('pinModalOv'); document.getElementById('pinModalMsg').textContent=msg||''; const input=document.getElementById('pinModalInput'); input.value=''; ov.classList.add('show'); input.focus(); function cleanup(v){ ov.classList.remove('show'); okBtn.removeEventListener('click',onOk); cancelBtn.removeEventListener('click',onCancel); res(v); } const okBtn=document.getElementById('pinOk'), cancelBtn=document.getElementById('pinCancel'); function onOk(){ cleanup(input.value); } function onCancel(){ cleanup(null); } okBtn.addEventListener('click',onOk); cancelBtn.addEventListener('click',onCancel); }); }
+function askPin(title,msg,opts){ opts=opts||{}; return new Promise(res=>{ const ov=document.getElementById('pinModalOv'); document.getElementById('pinModalMsg').textContent=msg||''; const input=document.getElementById('pinModalInput'); input.value=''; input.type=opts.text?'text':'password'; input.setAttribute('inputmode',opts.text?'text':'numeric'); input.style.textTransform=opts.text?'uppercase':'none'; ov.classList.add('show'); input.focus(); function cleanup(v){ ov.classList.remove('show'); okBtn.removeEventListener('click',onOk); cancelBtn.removeEventListener('click',onCancel); res(v); } const okBtn=document.getElementById('pinOk'), cancelBtn=document.getElementById('pinCancel'); function onOk(){ cleanup(input.value); } function onCancel(){ cleanup(null); } okBtn.addEventListener('click',onOk); cancelBtn.addEventListener('click',onCancel); }); }
 
 async function getAdminPin(){
   const m = await idbGet('meta','adminPin');
@@ -641,6 +662,49 @@ async function requirePin(label){
   if(entered===null) return false;
   if(entered!==real){ await showMsg('Galat PIN.'); return false; }
   return true;
+}
+
+/* ---------- Team access code ---------- */
+async function getTeamKey(){ const m = await idbGet('meta','teamKey'); return (m && m.value) || ''; }
+let teamCodePrompt = null;
+function requestTeamCode(wrong){
+  if(teamCodePrompt) return teamCodePrompt;
+  teamCodePrompt = (async()=>{
+    const v = await askPin('Team code', (wrong?'Galat code. ':'')+'Team access code daalo (admin se pucho). Ye is phone par sirf ek baar maanga jayega.', {text:true});
+    if(v===null || !String(v).trim()) return false;
+    await idbPut('meta',{key:'teamKey', value:String(v).trim().toUpperCase()});
+    return true;
+  })().finally(()=>{ teamCodePrompt=null; });
+  return teamCodePrompt;
+}
+async function sheetGet(url, query, init, o){
+  o = o || {};
+  const sep = url.includes('?') ? '&' : '?';
+  for(let attempt=0; attempt<2; attempt++){
+    const key = await getTeamKey();
+    const ctl = new AbortController(); const timer = o.timeoutMs ? setTimeout(()=>ctl.abort(), o.timeoutMs) : null;
+    let resp;
+    try{ resp = await fetch(url+sep+query+(key?'&key='+encodeURIComponent(key):''), Object.assign({}, init||{}, o.timeoutMs?{signal:ctl.signal}:{})); }
+    finally{ if(timer) clearTimeout(timer); }
+    if(!resp.ok) return {resp, data:null, unauthorized:false, badJson:false};
+    let data=null;
+    try{ data = await resp.json(); }catch(e){ return {resp, data:null, unauthorized:false, badJson:true}; }
+    if(data && data.error==='unauthorized'){
+      if(o.silent || attempt===1) return {resp, data:null, unauthorized:true, badJson:false};
+      if(!(await requestTeamCode(attempt>0 || !!key))) return {resp, data:null, unauthorized:true, badJson:false};
+      continue;
+    }
+    return {resp, data, unauthorized:false, badJson:false};
+  }
+}
+// true = ok to talk to the Sheet (code accepted or none required). Used before no-cors POSTs,
+// which can't read a reply, so a wrong code would otherwise silently lose data.
+async function ensureAuth(url, o){
+  try{
+    const r = await sheetGet(url, 'type=ping', null, Object.assign({timeoutMs:15000}, o||{}));
+    if(r.unauthorized) return false;
+    return !!(r.data && r.data.ok);
+  }catch(e){ return false; }
 }
 
 function markDirty(){ dirty=true; renderStatus(); }
@@ -680,6 +744,7 @@ function loadFormFromState(){
   toggleRawMaterialCard();
   toggleCartonCard();
   toggleFinalOnlyFields();
+  toggleChecklistA();
   toggleCounterSamplePhotoBox();
   renderCounterSamplePhoto();
   togglePrepackBox();
@@ -728,12 +793,14 @@ function bindFieldListeners(){
     el.addEventListener(evt, ()=>{
       state[k]=el.value; markDirty();
       if(k==='inspector' && el.value.trim()) idbPut('meta',{key:'lastInspector', value:el.value.trim()}).catch(()=>{});
+      if(k==='inspector') syncInspectorSigName();
       if(k==='actualQty'){ recalcAql(); renderRawMaterials(); }
       if(k==='totalCartons'||k==='offeredCartons'||k==='cartonOpenedManual') recalcCartonOpened();
       if(k==='inspectionType'){
         toggleRawMaterialCard();
         toggleCartonCard();
         toggleFinalOnlyFields();
+        toggleChecklistA();
         if(!reportNoLocked){
           nextReportNo(state.inspectionType).then(no=>{ state.reportNo=no; document.getElementById('f_reportNo').value=no; });
         }
@@ -971,6 +1038,13 @@ function toggleFinalOnlyFields(){
   // that card always stays visible regardless of inspection type.
 }
 function isFinalOnlyStage(){ return FINAL_ONLY_TYPES.includes(state.inspectionType); }
+/* Section A (General checks) is only relevant once goods are ready for
+   shipment — hidden for Raw Material/Pilot Run/Inline/DUPRO, visible only
+   for Final. */
+function toggleChecklistA(){
+  const card = document.getElementById('checklistACard');
+  if(card) card.style.display = (state.inspectionType==='Final') ? 'block' : 'none';
+}
 function toggleCartonCard(){
   const show = MIDLINE_TO_FINAL_TYPES.includes(state.inspectionType);
   document.getElementById('cartonCard').style.display = show ? 'block' : 'none';
@@ -1288,6 +1362,7 @@ function wireDefectMic(btn){
       const t = e.results[0][0].transcript;
       state.defects[i].desc = (state.defects[i].desc?state.defects[i].desc+' ':'') + t;
       markDirty(); renderDefects();
+      toast('Awaaz se likha gaya — galat shabd (jaise "Beads") aa sakte hain, ek baar check kar lo');
     };
     rec.onend = ()=>{ activeRecognition=null; };
     rec.onerror = e=>{
@@ -1398,14 +1473,62 @@ function renderPhotos(){
   g.innerHTML = state.photos.map(p=>`
     <div class="photo-card-item">
       <div class="photo-tile" style="aspect-ratio:auto;height:140px"><img src="${p.data}"><button class="del" data-id="${p.id}">✕</button></div>
-      <input class="photo-caption-input" data-id="${p.id}" value="${escapeHtml(p.caption||'')}" placeholder="Ye photo kyun li — e.g. Plating is not Good">
+      <div class="mic-row">
+        <input class="photo-caption-input" data-id="${p.id}" value="${escapeHtml(p.caption||'')}" placeholder="Ye photo kyun li (Hinglish) — e.g. Plating sahi nahi hai">
+        <button class="mic-btn photo-caption-mic" data-id="${p.id}" type="button" title="Dictate">🎤</button>
+      </div>
+      <button class="btn btn-ghost photo-caption-translate" data-id="${p.id}" type="button" style="margin:6px 0;padding:4px 10px;font-size:12px">Translate to English →</button>
+      <input class="photo-caption-en-input" data-id="${p.id}" value="${escapeHtml(p.captionEn||'')}" placeholder="English caption (buyer copy ke liye)">
     </div>`).join('');
   g.querySelectorAll('.del').forEach(btn=>btn.addEventListener('click', ()=>{ state.photos=state.photos.filter(p=>p.id!==btn.dataset.id); markDirty(); renderPhotos(); }));
   g.querySelectorAll('.photo-caption-input').forEach(inp=>inp.addEventListener('input', ()=>{
     const p = state.photos.find(x=>x.id===inp.dataset.id);
     if(p){ p.caption = inp.value; markDirty(); }
   }));
+  g.querySelectorAll('.photo-caption-en-input').forEach(inp=>inp.addEventListener('input', ()=>{
+    const p = state.photos.find(x=>x.id===inp.dataset.id);
+    if(p){ p.captionEn = inp.value; markDirty(); }
+  }));
+  g.querySelectorAll('.photo-caption-mic').forEach(btn=>wirePhotoCaptionMic(btn));
+  g.querySelectorAll('.photo-caption-translate').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const p = state.photos.find(x=>x.id===btn.dataset.id);
+    const text = (p && p.caption || '').trim();
+    if(!text){ toast('Pehle Hinglish caption bharo'); return; }
+    const original = btn.textContent;
+    btn.textContent='Translating…'; btn.disabled=true;
+    try{
+      const out = await translateHiToEn(text);
+      p.captionEn = out; markDirty();
+      const enInput = g.querySelector(`.photo-caption-en-input[data-id="${btn.dataset.id}"]`);
+      if(enInput) enInput.value = out;
+      toast('Translate ho gaya — check kar lo');
+    }catch(err){ toast('Translate fail hua — internet check karo'); }
+    finally{ btn.textContent=original; btn.disabled=false; }
+  }));
   document.getElementById('photoCount').textContent = state.photos.length;
+}
+function wirePhotoCaptionMic(btn){
+  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ btn.disabled=true; btn.title='Voice input not supported in this browser'; return; }
+  btn.addEventListener('click', ()=>{
+    if(activeRecognition){ activeRecognition.stop(); return; }
+    const id = btn.dataset.id;
+    const rec = new SR(); rec.lang='hi-IN'; rec.continuous=false; rec.interimResults=false;
+    rec.onresult = e=>{
+      const t = e.results[0][0].transcript;
+      const p = state.photos.find(x=>x.id===id);
+      if(p){ p.caption = (p.caption?p.caption+' ':'') + t; markDirty(); renderPhotos(); }
+      toast('Awaaz se likha gaya — galat shabd (jaise "Beads") aa sakte hain, ek baar check kar lo');
+    };
+    rec.onend = ()=>{ activeRecognition=null; };
+    rec.onerror = e=>{
+      activeRecognition=null;
+      const msg = {'not-allowed':'Mic permission block hai.', 'service-not-allowed':'Mic permission block hai.', 'no-speech':'Kuch sunai nahi diya.', 'audio-capture':'Microphone nahi mila.', 'network':'Internet check karo.'}[e.error];
+      if(msg) toast(msg);
+    };
+    try{ rec.start(); activeRecognition=rec; btn.classList.add('rec'); }
+    catch(err){ toast('Mic start nahi ho paya'); }
+  });
 }
 document.getElementById('downloadZipBtn').addEventListener('click', async ()=>{
   if(!state.photos.length){ toast('No photos to download'); return; }
@@ -1416,8 +1539,23 @@ document.getElementById('downloadZipBtn').addEventListener('click', async ()=>{
 });
 
 /* ---------- Signatures ---------- */
+/* QC Name mirrors the Inspector name from the Details tab automatically —
+   same as Merchant/Vendor already auto-fill from the order search — but only
+   while it hasn't been typed differently by hand in the Sign-off block
+   itself (so correcting it there sticks). */
+function syncInspectorSigName(){
+  if(!state.sigMeta) state.sigMeta = {};
+  if(!state.sigMeta.inspector) state.sigMeta.inspector = {name:'',designation:''};
+  if(state.sigMeta.inspector.name===state.sigMeta.inspector._auto || !state.sigMeta.inspector.name){
+    state.sigMeta.inspector.name = state.inspector||'';
+    state.sigMeta.inspector._auto = state.inspector||'';
+    const el = document.querySelector('input[data-sig="inspector"][data-sf="name"]');
+    if(el) el.value = state.sigMeta.inspector.name;
+  }
+}
 function buildSigBlocks(){
   if(!state.sigMeta) state.sigMeta = {};
+  syncInspectorSigName();
   signaturePadResizers = [];
   const roles=[['inspector','Inspector signature'],['production','Production signature'],['merchant','Merchant signature'],['vendor','Vendor signature'],['buyer','Buyer/QC rep signature (optional)']];
   roles.forEach(([key])=>{ if(!state.signatures) state.signatures={}; if(!(key in state.signatures)) state.signatures[key]=null; if(!state.sigMeta[key]) state.sigMeta[key]={name:'',designation:''}; });
@@ -1483,7 +1621,7 @@ function initMic(btnId, textId, lang){
   btn.addEventListener('click', ()=>{
     if(activeRecognition){ activeRecognition.stop(); return; }
     const rec=new SR(); rec.lang=lang; rec.continuous=false; rec.interimResults=false;
-    rec.onresult = e=>{ const t=e.results[0][0].transcript; ta.value = (ta.value? ta.value+' ':'')+t; ta.dispatchEvent(new Event('input')); };
+    rec.onresult = e=>{ const t=e.results[0][0].transcript; ta.value = (ta.value? ta.value+' ':'')+t; ta.dispatchEvent(new Event('input')); toast('Awaaz se likha gaya — galat shabd (jaise "Beads") aa sakte hain, ek baar check kar lo'); };
     rec.onend = ()=>{ btn.classList.remove('rec'); activeRecognition=null; };
     rec.onerror = e=>{
       btn.classList.remove('rec'); activeRecognition=null;
@@ -1669,7 +1807,8 @@ async function syncOrderMasterToSheet(orders){
   const slim = slimAll.filter(o => MANDATORY.every(f => String(o[f]||'').trim()));
   const skipped = slimAll.filter(o => !MANDATORY.every(f => String(o[f]||'').trim()));
   try{
-    await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({kind:'orderMaster', orders: slim}) });
+    if(!(await ensureAuth(url))){ toast('Team code galat/missing — Sheet me nahi gaya'); return false; }
+    await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({kind:'orderMaster', key: await getTeamKey(), orders: slim}) });
     let msg = `Order master synced to Sheet (${slim.length} complete orders) — ${new Date().toLocaleString()}. Existing rows for other VGs are kept, not deleted.`;
     if(skipped.length){
       const sample = skipped.slice(0,8).map(o=>o.vgNo).join(', ');
@@ -1789,7 +1928,8 @@ async function syncCompanyInfoToSheet(info){
   const statusEl = document.getElementById('companyInfoSyncStatus');
   if(!url){ if(statusEl) statusEl.textContent='Google Sheet backup URL Admin me set nahi hai — sirf is device par letterhead saved hai.'; return false; }
   try{
-    await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({kind:'companyInfo', companyInfo: info}) });
+    if(!(await ensureAuth(url))){ toast('Team code galat/missing — Sheet me nahi gaya'); return false; }
+    await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({kind:'companyInfo', key: await getTeamKey(), companyInfo: info}) });
     if(statusEl) statusEl.textContent = 'Letterhead synced to Sheet — '+new Date().toLocaleString()+'. Team ke baaki phones agli baar Admin kholte hi ye khud utha lenge.';
     return true;
   }catch(err){
@@ -1802,10 +1942,8 @@ async function pullCompanyInfoFromSheet(){
   const url = rec && rec.value;
   if(!url) return;
   try{
-    const sep = url.includes('?') ? '&' : '?';
-    const resp = await fetch(url+sep+'type=companyInfo');
-    if(!resp.ok) return;
-    const data = await resp.json();
+    const r = await sheetGet(url,'type=companyInfo',null,{silent:true,timeoutMs:20000});
+    const data = r.data;
     if(!data || !data.companyInfo) return;
     const remote = data.companyInfo;
     const local = await idbGet('meta','companyInfo');
@@ -1826,10 +1964,8 @@ async function pullOrderMasterFromSheet(){
   const infoRec = await idbGet('meta','orderMasterInfo');
   if(infoRec && infoRec.value && infoRec.value.count) return;
   try{
-    const sep = url.includes('?') ? '&' : '?';
-    const resp = await fetch(url+sep+'type=orderMaster');
-    if(!resp.ok) return;
-    const data = await resp.json();
+    const r = await sheetGet(url,'type=orderMaster',null,{silent:true,timeoutMs:30000});
+    const data = r.data;
     if(!data || !Array.isArray(data.orders) || !data.orders.length) return;
     await idbPut('meta', {key:'orderMaster', value:expandOrders(data.orders)});
     await idbPut('meta', {key:'orderMasterInfo', value:{filename:'(auto-synced from Google Sheet)', count:data.orders.length, uploadedAt:Date.now(), mappedFields:[], headerRow:1}});
@@ -1885,12 +2021,20 @@ function applyOrderMatch(o){
       if(el) el.value = o[f];
     }
   });
+  if(!state.sigMeta) state.sigMeta = {};
   if(o.merchant){
-    if(!state.sigMeta) state.sigMeta = {};
     if(!state.sigMeta.merchant) state.sigMeta.merchant = {name:'',designation:''};
     state.sigMeta.merchant.name = o.merchant;
     const el = document.querySelector('input[data-sig="merchant"][data-sf="name"]');
     if(el) el.value = o.merchant;
+  }
+  if(o.supplier){
+    // Vendor signs for the firm, not as an individual — "For <Firm Name>" is
+    // the standard way this line is signed on an inspection report.
+    if(!state.sigMeta.vendor) state.sigMeta.vendor = {name:'',designation:''};
+    state.sigMeta.vendor.name = 'For ' + o.supplier;
+    const el = document.querySelector('input[data-sig="vendor"][data-sf="name"]');
+    if(el) el.value = 'For ' + o.supplier;
   }
   state.vendorProcess = o.process || '';
   if(o.process && !isMainVendorProcess(o.process) && state.inspectionType && state.inspectionType!=='Raw Material' && state.inspectionType!=='Pilot Run'){
@@ -1925,11 +2069,8 @@ async function remoteMaxForPrefix(prefix){
   try{
     const rec = await idbGet('meta','sheetUrl'); const url = rec && rec.value;
     if(!url) return 0;
-    const sep = url.includes('?') ? '&' : '?';
-    const resp = await fetch(url+sep+'type='+encodeURIComponent(prefix));
-    if(!resp.ok) return 0;
-    const data = await resp.json();
-    return parseInt(data.maxNumber,10) || 0;
+    const r = await sheetGet(url,'type='+encodeURIComponent(prefix),null,{silent:true,timeoutMs:10000});
+    return parseInt(r.data && r.data.maxNumber,10) || 0;
   }catch(e){ return 0; } // offline or older Apps Script version without doGet — fall back to local numbering
 }
 async function nextReportNo(type){
@@ -2037,8 +2178,36 @@ async function renderAdmin(){
   } else {
     document.getElementById('storageUsageStatus').textContent = `${all.length} reports saved.`;
   }
+  renderSecurityStatus();
   renderAllTeamReports();
 }
+
+async function renderSecurityStatus(){
+  const el=document.getElementById('securityStatus'); if(!el) return;
+  const pin = await idbGet('meta','adminPin'); const key = await getTeamKey();
+  const rec = await idbGet('meta','sheetUrl'); const url = rec&&rec.value;
+  let net='';
+  if(url){ try{ const r=await sheetGet(url,'type=ping',null,{silent:true,timeoutMs:12000}); net = r.unauthorized ? ' · Sheet: <b style="color:#8A3B3B">code galat/missing</b>' : (r.data&&r.data.ok ? ' · Sheet: <b>'+(r.data.secured?'code se surakshit ✔':'code SET NAHI (open!)')+'</b>' : ' · Sheet: jawab nahi mila'); }catch(e){ net=' · Sheet: offline'; } }
+  el.innerHTML = 'Admin PIN: <b>'+((pin&&pin.value)?'custom ✔':'default 1234 — badlo!')+'</b> · Team code is device par: <b>'+(key?'saved ✔':'nahi')+'</b>'+net;
+}
+document.getElementById('changePinBtn').addEventListener('click', async ()=>{
+  const old = await askPin('Change PIN','Purana Admin PIN');
+  if(old===null) return;
+  if(old!==await getAdminPin()){ await showMsg('Purana PIN galat.'); return; }
+  const n1 = await askPin('Change PIN','Naya PIN (4 se 12 digit)');
+  if(n1===null) return;
+  if(!/^\d{4,12}$/.test(n1)){ await showMsg('PIN sirf 4 se 12 digit ka hona chahiye.'); return; }
+  const n2 = await askPin('Change PIN','Naya PIN dobara');
+  if(n2!==n1){ await showMsg('Dono PIN match nahi hue.'); return; }
+  await idbPut('meta',{key:'adminPin', value:n1});
+  toast('Admin PIN badal gaya'); renderSecurityStatus();
+});
+document.getElementById('setTeamCodeBtn').addEventListener('click', async ()=>{
+  if(!(await requestTeamCode(false))) return;
+  const rec = await idbGet('meta','sheetUrl'); const url = rec&&rec.value;
+  if(url){ const ok = await ensureAuth(url,{silent:true}); toast(ok?'Code sahi hai ✔':'Code galat lag raha hai'); }
+  renderSecurityStatus();
+});
 document.getElementById('retryAllTeamReportsBtn').addEventListener('click', renderAllTeamReports);
 let teamReportsLoadToken = 0;
 async function renderAllTeamReports(){
@@ -2056,25 +2225,21 @@ async function renderAllTeamReports(){
     if(myToken!==teamReportsLoadToken) return;
     if(!url){ el.textContent='Google Sheet URL set karo pehle (neeche) — tabhi poori team ke reports yahan dikhenge.'; return; }
 
-    const sep = url.includes('?') ? '&' : '?';
-    const controller = new AbortController();
-    const timer = setTimeout(()=>controller.abort(), 20000);
-    let resp;
+    let r;
     try{
-      resp = await fetch(url+sep+'type=allReports', {signal: controller.signal});
+      r = await sheetGet(url,'type=allReports',null,{timeoutMs:20000});
     }catch(err){
       if(myToken!==teamReportsLoadToken) return;
       el.textContent = (err && err.name==='AbortError')
         ? 'Sheet se 20 second me jawab nahi mila (bahut slow ya atak gaya) — "All team reports" niche dubara khol ke retry karo.'
         : 'Sheet se connect nahi ho paya ('+(err && err.message || 'network')+'). Sheet URL sahi hai? Web App "Anyone" access par deploy hai?';
       return;
-    } finally { clearTimeout(timer); }
+    }
     if(myToken!==teamReportsLoadToken) return;
-
-    if(!resp.ok){ el.textContent='Sheet ne error diya (HTTP '+resp.status+').'; return; }
-    let data;
-    try{ data = await resp.json(); }
-    catch(err){ el.textContent='Sheet se jawab padha nahi ja saka — Apps Script ka NEW VERSION deploy kiya hai? (Deploy > Manage deployments > New version)'; return; }
+    if(r.unauthorized){ el.textContent='Team code galat ya missing hai — Admin > Security me "Team code (is device par)" se sahi code daalo.'; return; }
+    if(!r.resp.ok){ el.textContent='Sheet ne error diya (HTTP '+r.resp.status+').'; return; }
+    if(r.badJson){ el.textContent='Sheet se jawab padha nahi ja saka — Apps Script ka NEW VERSION deploy kiya hai? (Deploy > Manage deployments > New version)'; return; }
+    const data = r.data;
     if(myToken!==teamReportsLoadToken) return;
 
     if(!data || !Array.isArray(data.reports)){ el.textContent='Purana Apps Script deployed hai (allReports support nahi) — naya AppsScript.gs paste karke "New version" deploy karo.'; return; }
@@ -2163,9 +2328,11 @@ async function flushSyncQueue(){
     if(!url) return false;
     let rec = await idbGet('meta','syncQueue');
     let q = (rec && rec.value) || [];
+    if(q.length && !(await ensureAuth(url))) return false; // wrong/missing code: keep queue, don't drain
+    const teamKey = await getTeamKey();
     while(q.length){
       try{
-        await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(q[0]) });
+        await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(Object.assign({}, q[0], {key: teamKey})) });
       }catch(err){ return false; }
       q.shift();
       await idbPut('meta',{key:'syncQueue', value:q});
@@ -2193,7 +2360,7 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
       const st = measurePointStatus(p);
       return `${p.name}: spec ${p.specified||'?'}±${p.tolerance||'?'}${p.unit} [${(p.values||[]).filter(v=>v!=='').join('/')||'no readings'}] ${st.done?(st.pass?'PASS':'FAIL'):''}`;
     }).join(' | ')],
-    ['Total carton', state.totalCartons],['Offered carton', state.offeredCartons],['Qty per carton', state.qtyPerCarton],['Carton opened — auto', state.cartonOpenedAuto],['Carton opened — manual (extra)', state.cartonOpenedManual],['Carton opened — total', state.cartonOpenedTotal],['Open carton no.', state.openCartonNo],
+    ...(MIDLINE_TO_FINAL_TYPES.includes(state.inspectionType) ? [['Total carton', state.totalCartons],['Offered carton', state.offeredCartons],['Qty per carton', state.qtyPerCarton],['Carton opened — auto', state.cartonOpenedAuto],['Carton opened — manual (extra)', state.cartonOpenedManual],['Carton opened — total', state.cartonOpenedTotal],['Open carton no.', state.openCartonNo]] : []),
     ['Critical defects', critical],['Major defects', major],['Minor defects', minor],['Total defects', total],
     ['Remarks (Hinglish)', state.remarksVendor],['Remarks (English)', state.remarksBuyer],
     ['Action to be taken (Hinglish)', state.actionVendor],['Action to be taken (English)', state.actionBuyer],
@@ -2210,7 +2377,7 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(defRows), 'Defects');
 
   const chkRows = [['Section','Item','Result']];
-  [['A',CHECKLIST_A],['C',CHECKLIST_C],['D',CHECKLIST_D]].forEach(([g,items])=>{
+  (state.inspectionType==='Final' ? [['A',CHECKLIST_A],['C',CHECKLIST_C],['D',CHECKLIST_D]] : [['C',CHECKLIST_C],['D',CHECKLIST_D]]).forEach(([g,items])=>{
     items.forEach((label,i)=>chkRows.push([g, label, (state.checklist[g]&&state.checklist[g][i])||'']));
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chkRows), 'Checklist');
@@ -2269,6 +2436,11 @@ async function downloadPdf(audience){
   const isRaw = state.inspectionType==='Raw Material';
   const plan = isRaw ? null : planForType(parseInt(state.actualQty)||0, state.inspectionType);
   const isHindiVendor = audience==='vendor';
+  // Vendor copy must never reveal which buyer the order is for: the Buyer-code row and
+  // the buyer signature are dropped, and the buyer's name is scrubbed from every text field.
+  const buyerTerms = (()=>{ const b=String(state.buyerCode||'').trim(); if(!b) return []; const t=[b]; b.split(/[\s,\/&_-]+/).forEach(w=>{ if(w.length>=5) t.push(w); }); return t.sort((x,y)=>y.length-x.length); })();
+  const buyerRe = buyerTerms.length ? new RegExp(buyerTerms.map(t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'),'gi') : null;
+  const escapeHtml = (v)=>{ let t=String(v==null?'':v); if(isHindiVendor && buyerRe) t=t.replace(buyerRe,'—'); return globalThis.escapeHtml(t); };
   const companyRec = await idbGet('meta','companyInfo');
   const company = (companyRec && companyRec.value) || {name:'',address:'',logo:''};
   const rmBlock = (state.rawMaterials && state.rawMaterials.length) ? `
@@ -2295,7 +2467,7 @@ async function downloadPdf(audience){
         ${state.photos.map(p=>`
           <div class="pdf-atomic" style="margin-bottom:16px">
             <img src="${p.data}" style="width:250px;max-height:340px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;display:block">
-            <div style="font-size:13px;color:#14181F;margin-top:5px;font-weight:700">${escapeHtml(p.caption||'(no comment)')}</div>
+            <div style="font-size:13px;color:#14181F;margin-top:5px;font-weight:700">${escapeHtml((isHindiVendor ? p.caption : (p.captionEn||p.caption))||'(no comment)')}</div>
           </div>`).join('')}
       </div>` : '';
   const counterSampleBlock = (state.counterSample==='Yes' && state.counterSamplePhoto) ? `
@@ -2376,9 +2548,9 @@ async function downloadPdf(audience){
       <div style="font-size:13px;color:#555;margin-bottom:14px;font-weight:600">Report No ${escapeHtml(state.reportNo)} · ${fmtDateDDMMMYYYY(state.date)} · VG ${escapeHtml(state.vgNo)} · ${escapeHtml(state.inspectionType||'')}</div>
       ${resultBlock}
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px">
-        ${[['Inspector',state.inspector],['Inspection type',state.inspectionType],['Location', state.location?`${state.location.lat.toFixed(5)}, ${state.location.lng.toFixed(5)}`:''],['Buyer code',state.buyerCode],['Supplier',state.supplier],['Style',state.style],['Colour',state.color],['PO',state.po],['Order qty',state.orderQty],['Actual/Offered qty',state.actualQty],['Sample size',plan?plan.n:''],['Counter sample',state.counterSample],
+        ${[['Inspector',state.inspector],['Inspection type',state.inspectionType],['Location', state.location?`${state.location.lat.toFixed(5)}, ${state.location.lng.toFixed(5)}`:''],...(isHindiVendor?[]:[['Buyer code',state.buyerCode]]),['Supplier',state.supplier],['Style',state.style],['Colour',state.color],['PO',state.po],['Order qty',state.orderQty],['Actual/Offered qty',state.actualQty],['Sample size',plan?plan.n:''],['Counter sample',state.counterSample],
           isFinalOnlyStage()?['Prepack required',state.prepackRequired]:null, isFinalOnlyStage()?['Prepack qty (pcs)',state.prepackQty]:null, isFinalOnlyStage()?['Lab test result',state.labTest]:null,
-          ['Total carton',state.totalCartons],['Offered carton',state.offeredCartons],['Qty per carton',state.qtyPerCarton],['Carton opened (auto+manual)',`${state.cartonOpenedAuto||0} + ${state.cartonOpenedManual||0} = ${state.cartonOpenedTotal||0}`],['Open carton no.',state.openCartonNo]].filter(Boolean)
+          ...(MIDLINE_TO_FINAL_TYPES.includes(state.inspectionType) ? [['Total carton',state.totalCartons],['Offered carton',state.offeredCartons],['Qty per carton',state.qtyPerCarton],['Carton opened (auto+manual)',`${state.cartonOpenedAuto||0} + ${state.cartonOpenedManual||0} = ${state.cartonOpenedTotal||0}`],['Open carton no.',state.openCartonNo]] : [])].filter(Boolean)
           .map(([k,v])=>`<tr><td style="border:1px solid #ccc;padding:5px;font-weight:600;width:140px">${k}</td><td style="border:1px solid #ccc;padding:5px">${escapeHtml(String(v||''))}</td></tr>`).join('')}
       </table>
       ${rmBlock}
@@ -2397,7 +2569,7 @@ async function downloadPdf(audience){
       ${prepackBlock}
       ${photosBlock}
       <div style="display:flex;gap:14px;margin-top:20px;flex-wrap:wrap">
-        ${['inspector','production','merchant','vendor','buyer'].map(k=>{
+        ${['inspector','production','merchant','vendor','buyer'].filter(k=>!(isHindiVendor&&k==='buyer')).map(k=>{
           const meta = (state.sigMeta&&state.sigMeta[k])||{name:'',designation:''};
           if(!state.signatures[k] && !meta.name && !meta.designation) return '';
           return `<div style="text-align:center;min-width:120px">${state.signatures[k]?`<img src="${state.signatures[k]}" style="height:55px">`:'<div style="height:55px"></div>'}<div style="font-size:12px;border-top:1px solid #999;margin-top:4px;padding-top:3px;font-weight:700">${escapeHtml(meta.name||'')}${meta.designation?' — '+escapeHtml(meta.designation):''}</div><div style="font-size:10px;color:#777;text-transform:capitalize;font-weight:600">${k}</div></div>`;
@@ -2468,9 +2640,23 @@ const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzalaTTAB7uat
   bindFieldListeners();
   loadFormFromState();
   dirty = false; renderStatus();
-  flushSyncQueue().catch(()=>{});
-  pullCompanyInfoFromSheet().catch(()=>{});
-  pullOrderMasterFromSheet().catch(()=>{}).then(()=>{ if(currentView==='admin') renderOrderMasterStatus(); });
+  // Background: check the team code first (asks once if the Sheet is secured), then sync.
+  (async()=>{
+    try{
+      const u = await idbGet('meta','sheetUrl');
+      if(!u || !u.value || !navigator.onLine) return;
+      const ok = await ensureAuth(u.value);
+      if(!ok) return;
+      await flushSyncQueue().catch(()=>{});
+      await pullCompanyInfoFromSheet().catch(()=>{});
+      await pullOrderMasterFromSheet().catch(()=>{});
+      if(currentView==='admin') renderOrderMasterStatus();
+      if(!dirty && !reportNoLocked){
+        const n = await nextReportNo(state.inspectionType);
+        if(n && n!==state.reportNo && !dirty){ state.reportNo=n; loadFormFromState(); dirty=false; renderStatus(); }
+      }
+    }catch(e){}
+  })();
 })();
 </script>
 </body>
