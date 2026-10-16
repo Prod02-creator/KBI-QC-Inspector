@@ -150,6 +150,10 @@ textarea{min-height:64px;resize:vertical}
         </div>
         <div class="search-results" id="orderSearchResults" style="display:none"></div>
       </div>
+      <div id="productImgWrap" style="display:none;margin:4px 0 12px">
+        <div class="hint" style="margin-bottom:4px">Product image (order sheet se) — badi karne ke liye tap karo</div>
+        <img id="productImgEl" alt="Product" style="width:140px;max-height:160px;object-fit:contain;background:#f4f4f4;border:1px solid var(--line,#ccc);border-radius:6px;cursor:pointer">
+      </div>
       <div class="grid2">
         <div class="field"><label>Report No. (auto)</label><input id="f_reportNo" readonly class="mono" style="background:#f2f1ec;color:var(--ink-soft)"></div>
         <div class="field"><label>Inspection date</label><input id="f_date" type="date"></div>
@@ -736,6 +740,7 @@ document.querySelectorAll('.navbar button').forEach(b=>b.addEventListener('click
 const FIELD_IDS = ['reportNo','date','vgNo','inspectionType','inspector','buyerCode','supplier','style','color','desc','po','challan','orderQty','actualQty','counterSample','prepackRequired','prepackQty','labTest','nickelTest','pullTest','measurementPieces','totalCartons','offeredCartons','qtyPerCarton','cartonOpenedAuto','cartonOpenedManual','cartonOpenedTotal','openCartonNo','remarksVendor','remarksBuyer','actionVendor','actionBuyer'];
 function loadFormFromState(){
   FIELD_IDS.forEach(k=>{ const el=document.getElementById('f_'+k); if(el) el.value = state[k]!=null?state[k]:''; });
+  try{ refreshProductImage(); }catch(e){}
   if(!state.rawMaterials) state.rawMaterials=[];
   paintChecklist();
   renderDefects();
@@ -1734,6 +1739,117 @@ function findHeaderRowIndex(rows2d){
   }
   return best.score>0 ? best.rowIdx : 0;
 }
+/* ---------- Product images from the order sheet ---------- */
+function pimgKey(vg, style){ return (String(vg||'').trim()+'|'+String(style||'').trim()).toLowerCase(); }
+function shrinkImageToDataUrl(blob, maxPx, quality){
+  return new Promise((res)=>{
+    const url = URL.createObjectURL(blob); const img = new Image();
+    img.onload = ()=>{
+      try{
+        const sc = Math.min(1, maxPx/Math.max(img.width, img.height));
+        const c = document.createElement('canvas'); c.width = Math.max(1,Math.round(img.width*sc)); c.height = Math.max(1,Math.round(img.height*sc));
+        const g = c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height);
+        URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', quality));
+      }catch(e){ URL.revokeObjectURL(url); res(''); }
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); res(''); };
+    img.src = url;
+  });
+}
+// Reads pictures placed on the first sheet (Insert > Picture) and returns {sheetRowIndex0: blob}.
+async function extractSheetPictures(buf){
+  const out = {};
+  try{
+    const zip = await JSZip.loadAsync(buf);
+    const rd = async (p)=>{ const f = zip.file(p); return f ? await f.async('string') : null; };
+    const parse = (x)=> new DOMParser().parseFromString(x, 'application/xml');
+    const wbX = await rd('xl/workbook.xml'); const wbRels = await rd('xl/_rels/workbook.xml.rels');
+    if(!wbX || !wbRels) return out;
+    const firstSheet = parse(wbX).getElementsByTagName('sheet')[0]; if(!firstSheet) return out;
+    const rid = firstSheet.getAttribute('r:id') || firstSheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');
+    const relEls = Array.from(parse(wbRels).getElementsByTagName('Relationship'));
+    const target = (relEls.find(r=>r.getAttribute('Id')===rid)||{getAttribute:()=>''}).getAttribute('Target');
+    if(!target) return out;
+    const sheetPath = target.startsWith('/') ? target.slice(1) : 'xl/'+target.replace(/^\.\//,'');
+    const sheetName = sheetPath.split('/').pop();
+    const shRels = await rd('xl/worksheets/_rels/'+sheetName+'.rels'); if(!shRels) return out;
+    const drel = Array.from(parse(shRels).getElementsByTagName('Relationship')).find(r=>/\/drawing$/.test(r.getAttribute('Type')||''));
+    if(!drel) return out;
+    const drawPath = 'xl/'+drel.getAttribute('Target').replace(/^\.\.\//,'');
+    const drawX = await rd(drawPath); if(!drawX) return out;
+    const drawName = drawPath.split('/').pop();
+    const dRels = await rd('xl/drawings/_rels/'+drawName+'.rels'); if(!dRels) return out;
+    const imgMap = {};
+    Array.from(parse(dRels).getElementsByTagName('Relationship')).forEach(r=>{ imgMap[r.getAttribute('Id')] = 'xl/'+r.getAttribute('Target').replace(/^\.\.\//,''); });
+    const doc = parse(drawX);
+    const anchors = Array.from(doc.getElementsByTagName('*')).filter(n=>/^(xdr:)?(twoCellAnchor|oneCellAnchor)$/.test(n.nodeName));
+    for(const a of anchors){
+      const from = Array.from(a.getElementsByTagName('*')).find(n=>/^(xdr:)?from$/.test(n.nodeName)); if(!from) continue;
+      const rowEl = Array.from(from.children).find(n=>/row$/.test(n.nodeName)); if(!rowEl) continue;
+      const row = parseInt(rowEl.textContent,10);
+      const blip = Array.from(a.getElementsByTagName('*')).find(n=>/blip$/.test(n.nodeName)); if(!blip) continue;
+      const emb = blip.getAttribute('r:embed') || blip.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','embed');
+      const mp = imgMap[emb]; if(!mp || out[row]) continue;
+      const f = zip.file(mp); if(!f) continue;
+      const ext = mp.split('.').pop().toLowerCase();
+      const type = ext==='png'?'image/png': ext==='gif'?'image/gif' : ext==='webp'?'image/webp' : 'image/jpeg';
+      out[row] = new Blob([await f.async('uint8array')], {type});
+    }
+  }catch(e){ /* no pictures / unsupported — order import continues without images */ }
+  return out;
+}
+async function saveProductImagesLocally(items){
+  // items: [{key, dataUrl}]
+  let pend = ((await idbGet('meta','pimgPending'))||{}).value || [];
+  for(const it of items){
+    await idbPut('meta',{key:'pimg:'+it.key, value:it.dataUrl});
+    if(!pend.includes(it.key)) pend.push(it.key);
+  }
+  await idbPut('meta',{key:'pimgPending', value:pend});
+}
+async function uploadPendingProductImages(){
+  try{
+    const urlRec = await idbGet('meta','sheetUrl'); const url = urlRec && urlRec.value; if(!url) return false;
+    let pend = ((await idbGet('meta','pimgPending'))||{}).value || [];
+    if(!pend.length) return true;
+    if(!(await ensureAuth(url))) return false;
+    const teamKey = await getTeamKey();
+    while(pend.length){
+      const batch = pend.slice(0,4); const images = [];
+      for(const k of batch){ const r = await idbGet('meta','pimg:'+k); if(r && r.value) images.push({k, data:String(r.value).split(',')[1]||''}); }
+      if(images.length) await fetch(url, {method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({kind:'productImage', key: teamKey, images})});
+      pend = pend.slice(batch.length);
+      await idbPut('meta',{key:'pimgPending', value:pend});
+    }
+    return true;
+  }catch(e){ return false; }
+}
+const pimgMissSession = new Set();
+async function getProductImage(vg, style){
+  const k = pimgKey(vg, style); if(!vg && !style) return '';
+  const local = await idbGet('meta','pimg:'+k);
+  if(local && local.value) return local.value;
+  if(pimgMissSession.has(k) || !navigator.onLine) return '';
+  try{
+    const urlRec = await idbGet('meta','sheetUrl'); const url = urlRec && urlRec.value; if(!url) return '';
+    const r = await sheetGet(url, 'type=productImage&k='+encodeURIComponent(k), null, {silent:true, timeoutMs:15000});
+    const d = r.data && r.data.data;
+    if(d){ await idbPut('meta',{key:'pimg:'+k, value:d}); return d; }
+  }catch(e){}
+  pimgMissSession.add(k); return '';
+}
+async function refreshProductImage(){
+  const wrap = document.getElementById('productImgWrap'), el = document.getElementById('productImgEl'); if(!wrap||!el) return;
+  const vg = (state&&state.vgNo)||'', st = (state&&state.style)||'';
+  const tok = (refreshProductImage._t = (refreshProductImage._t||0)+1);
+  if(!vg && !st){ wrap.style.display='none'; return; }
+  const d = await getProductImage(vg, st);
+  if(tok !== refreshProductImage._t) return;
+  if(d){ el.src = d; wrap.style.display='block'; } else { wrap.style.display='none'; }
+}
+document.addEventListener('click', e=>{ if(e.target && e.target.id==='productImgEl'){ const el=e.target; el.style.width = el.style.width==='100%' ? '140px' : '100%'; el.style.maxHeight = el.style.width==='100%' ? 'none' : '160px'; } });
+['f_vgNo','f_style'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('change', ()=>refreshProductImage()); });
+
 async function handleOrderMasterFile(file){
   const buf = await file.arrayBuffer();
   // Deliberately NOT using cellDates:true — that converts ANY date-formatted cell
@@ -1756,8 +1872,9 @@ async function handleOrderMasterFile(file){
     if(colIdx>-1) headerKeyMap[field]=colIdx;
   });
 
-  const orders = dataRows.map(r=>{
-    const out={};
+  const rowBase = ((ws['!ref'] && XLSX.utils.decode_range(ws['!ref']).s.r) || 0) + headerRowIdx + 1; // 0-based sheet row of dataRows[0]
+  const orders = dataRows.map((r,ri)=>{
+    const out={_row: rowBase+ri};
     Object.keys(headerKeyMap).forEach(field=>{
       const raw = r[headerKeyMap[field]];
       out[field] = DATE_FIELDS.includes(field) ? cellToDateField(raw) : cellToPlainValue(raw);
@@ -1772,6 +1889,23 @@ async function handleOrderMasterFile(file){
   if(ambiguousCount) setTimeout(()=>alert(`${ambiguousCount} rows ka Supplier Name unclear hai (kai vendor ':' se likhe par ';' nahi). Unhe format me likho: Process:Vendor;Process:Vendor — jaise Resin:Abdullah;Making:Faizan`), 600);
 
   const matchedLabels = Object.keys(headerKeyMap).map(f=>`${f} → "${headerCells[headerKeyMap[f]]}"`);
+  // Product pictures (Insert > Picture in the PHOTO column) -> small JPEGs, kept on this phone and copied to Drive for the team.
+  let imgCount = 0;
+  try{
+    const pics = await extractSheetPictures(buf);
+    const picRows = Object.keys(pics);
+    if(picRows.length){
+      const items = []; const seen = new Set();
+      for(const o of orders){
+        const blob = pics[o._row]; if(!blob) continue;
+        const k = pimgKey(o.vgNo, o.style); if(seen.has(k)) continue; seen.add(k);
+        const dataUrl = await shrinkImageToDataUrl(blob, 420, 0.72); if(!dataUrl) continue;
+        items.push({key:k, dataUrl});
+      }
+      if(items.length){ await saveProductImagesLocally(items); imgCount = items.length; }
+    }
+  }catch(e){}
+  orders.forEach(o=>{ delete o._row; });
   await idbPut('meta', {key:'orderMaster', value:orders});
   await idbPut('meta', {key:'orderMasterInfo', value:{filename:file.name, count:orders.length, uploadedAt:Date.now(), mappedFields:matchedLabels, headerRow: headerRowIdx+1}});
   orderMasterCache = orders;
@@ -1780,8 +1914,9 @@ async function handleOrderMasterFile(file){
   } else {
     toast(`${orders.length} orders loaded from ${file.name}`);
   }
+  if(imgCount) setTimeout(()=>toast(imgCount+' product images mili — Drive me team ke liye save ho rahi hain'), 2300);
   renderAdmin();
-  syncOrderMasterToSheet(orders).catch(()=>{});
+  syncOrderMasterToSheet(orders).catch(()=>{}).then(()=>uploadPendingProductImages()).catch(()=>{});
 }
 async function syncOrderMasterToSheet(orders){
   orders = expandOrders(orders);
@@ -2041,6 +2176,7 @@ function applyOrderMatch(o){
     toast('Dhyan do: ye '+o.process+' (raw material) vendor hai — Making vendor chuno ya type Raw Material karo');
   }
   markDirty();
+  refreshProductImage();
   orderSearchInput.value = '';
   orderSearchResults.style.display='none'; orderSearchResults.innerHTML='';
   toast('Order details filled from order master');
@@ -2441,6 +2577,8 @@ async function downloadPdf(audience){
   const buyerTerms = (()=>{ const b=String(state.buyerCode||'').trim(); if(!b) return []; const t=[b]; b.split(/[\s,\/&_-]+/).forEach(w=>{ if(w.length>=5) t.push(w); }); return t.sort((x,y)=>y.length-x.length); })();
   const buyerRe = buyerTerms.length ? new RegExp(buyerTerms.map(t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'),'gi') : null;
   const escapeHtml = (v)=>{ let t=String(v==null?'':v); if(isHindiVendor && buyerRe) t=t.replace(buyerRe,'—'); return globalThis.escapeHtml(t); };
+  const productImg = await getProductImage(state.vgNo, state.style);
+  const productImgBlock = productImg ? `<div class="pdf-atomic" style="margin:0 0 12px 0;display:inline-block"><img src="${productImg}" style="width:190px;max-height:190px;object-fit:contain;background:#f4f4f4;border:1px solid #ccc;border-radius:4px;display:block"><div style="font-size:11px;font-weight:700;text-align:center;margin-top:3px">Product</div></div>` : '';
   const companyRec = await idbGet('meta','companyInfo');
   const company = (companyRec && companyRec.value) || {name:'',address:'',logo:''};
   const rmBlock = (state.rawMaterials && state.rawMaterials.length) ? `
@@ -2546,6 +2684,7 @@ async function downloadPdf(audience){
       ${letterheadBlock}
       <h2 style="margin:0 0 4px">Inspection Report</h2>
       <div style="font-size:13px;color:#555;margin-bottom:14px;font-weight:600">Report No ${escapeHtml(state.reportNo)} · ${fmtDateDDMMMYYYY(state.date)} · VG ${escapeHtml(state.vgNo)} · ${escapeHtml(state.inspectionType||'')}</div>
+      ${productImgBlock}
       ${resultBlock}
       <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px">
         ${[['Inspector',state.inspector],['Inspection type',state.inspectionType],['Location', state.location?`${state.location.lat.toFixed(5)}, ${state.location.lng.toFixed(5)}`:''],...(isHindiVendor?[]:[['Buyer code',state.buyerCode]]),['Supplier',state.supplier],['Style',state.style],['Colour',state.color],['PO',state.po],['Order qty',state.orderQty],['Actual/Offered qty',state.actualQty],['Sample size',plan?plan.n:''],['Counter sample',state.counterSample],
@@ -2648,6 +2787,7 @@ const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzalaTTAB7uat
       const ok = await ensureAuth(u.value);
       if(!ok) return;
       await flushSyncQueue().catch(()=>{});
+      await uploadPendingProductImages().catch(()=>{});
       await pullCompanyInfoFromSheet().catch(()=>{});
       await pullOrderMasterFromSheet().catch(()=>{});
       if(currentView==='admin') renderOrderMasterStatus();
