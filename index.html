@@ -482,6 +482,8 @@ textarea{min-height:64px;resize:vertical}
         <button class="btn btn-ghost" id="changePinBtn" type="button">Change Admin PIN</button>
         <button class="btn btn-ghost" id="setTeamCodeBtn" type="button">Team code (is device par)</button>
       </div>
+      <div class="hint" id="pimgStatus" style="margin-top:10px">Product images: checking…</div>
+      <div class="btn-row" style="margin-top:6px"><button class="btn btn-ghost" id="resendPimgBtn" type="button">Product images Drive me dobara bhejo</button></div>
       <div class="section-note">Team code Google Sheet ke Apps Script me hi rehta hai (Sheet menu: KBI QC &gt; Generate new team access code) — GitHub me kahin nahi. Bina code ke koi Sheet ka data nahi padh/bhej sakta.</div>
     </div>
     <div class="card">
@@ -1807,22 +1809,40 @@ async function saveProductImagesLocally(items){
   }
   await idbPut('meta',{key:'pimgPending', value:pend});
 }
+let lastPimgUpload = {saved:0, error:'', verified:false};
 async function uploadPendingProductImages(){
+  lastPimgUpload = {saved:0, error:'', verified:false};
   try{
-    const urlRec = await idbGet('meta','sheetUrl'); const url = urlRec && urlRec.value; if(!url) return false;
+    const urlRec = await idbGet('meta','sheetUrl'); const url = urlRec && urlRec.value; if(!url){ lastPimgUpload.error='Sheet URL set nahi'; return false; }
     let pend = ((await idbGet('meta','pimgPending'))||{}).value || [];
     if(!pend.length) return true;
-    if(!(await ensureAuth(url))) return false;
+    if(!(await ensureAuth(url))){ lastPimgUpload.error='Team code galat/missing ya Sheet se jawab nahi'; return false; }
     const teamKey = await getTeamKey();
     while(pend.length){
-      const batch = pend.slice(0,4); const images = [];
+      const batch = pend.slice(0,3); const images = [];
       for(const k of batch){ const r = await idbGet('meta','pimg:'+k); if(r && r.value) images.push({k, data:String(r.value).split(',')[1]||''}); }
-      if(images.length) await fetch(url, {method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body: JSON.stringify({kind:'productImage', key: teamKey, images})});
+      if(images.length){
+        const body = JSON.stringify({kind:'productImage', key: teamKey, images});
+        let verified = false;
+        try{
+          // Normal (CORS) POST so the server's answer can be read and a failure is not silent.
+          const resp = await fetch(url, {method:'POST', headers:{'Content-Type':'text/plain'}, body});
+          const d = await resp.json();
+          if(d && d.error==='unauthorized'){ lastPimgUpload.error='Team code galat'; return false; }
+          if(!d || d.ok!==true){ lastPimgUpload.error = 'Apps Script error: '+((d&&d.error)||'unknown'); return false; }
+          lastPimgUpload.saved += d.saved||0; verified = true;
+        }catch(e){
+          // Could not read the reply (network/CORS) — send blind as a fallback, result unverified.
+          await fetch(url, {method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body});
+          lastPimgUpload.saved += images.length;
+        }
+        lastPimgUpload.verified = verified;
+      }
       pend = pend.slice(batch.length);
       await idbPut('meta',{key:'pimgPending', value:pend});
     }
     return true;
-  }catch(e){ return false; }
+  }catch(e){ lastPimgUpload.error = String(e&&e.message||e); return false; }
 }
 const pimgMissSession = new Set();
 async function getProductImage(vg, style){
@@ -2315,6 +2335,7 @@ async function renderAdmin(){
     document.getElementById('storageUsageStatus').textContent = `${all.length} reports saved.`;
   }
   renderSecurityStatus();
+  renderPimgStatus();
   renderAllTeamReports();
 }
 
@@ -2326,6 +2347,26 @@ async function renderSecurityStatus(){
   if(url){ try{ const r=await sheetGet(url,'type=ping',null,{silent:true,timeoutMs:12000}); net = r.unauthorized ? ' · Sheet: <b style="color:#8A3B3B">code galat/missing</b>' : (r.data&&r.data.ok ? ' · Sheet: <b>'+(r.data.secured?'code se surakshit ✔':'code SET NAHI (open!)')+'</b>' : ' · Sheet: jawab nahi mila'); }catch(e){ net=' · Sheet: offline'; } }
   el.innerHTML = 'Admin PIN: <b>'+((pin&&pin.value)?'custom ✔':'default 1234 — badlo!')+'</b> · Team code is device par: <b>'+(key?'saved ✔':'nahi')+'</b>'+net;
 }
+async function renderPimgStatus(){
+  const el=document.getElementById('pimgStatus'); if(!el) return;
+  const all = await idbGetAll('meta');
+  const n = all.filter(r=>String(r.key).startsWith('pimg:')).length;
+  const pend = ((await idbGet('meta','pimgPending'))||{}).value || [];
+  let drive = '';
+  try{ const u=((await idbGet('meta','sheetUrl'))||{}).value; if(u){ const r=await sheetGet(u,'type=pimgCount',null,{silent:true,timeoutMs:12000}); drive = r.data && typeof r.data.count==='number' ? ' · Drive me: '+r.data.count : (r.unauthorized?' · Drive: code galat':' · Drive: jawab nahi (naya AppsScript deploy kiya?)'); } }catch(e){}
+  el.textContent = 'Product images is phone par: '+n+' · bhejne baaki: '+pend.length+drive;
+}
+document.getElementById('resendPimgBtn').addEventListener('click', async ()=>{
+  const all = await idbGetAll('meta');
+  const keys = all.filter(r=>String(r.key).startsWith('pimg:')).map(r=>String(r.key).slice(5));
+  if(!keys.length){ toast('Is phone par koi product image nahi — jis device se sheet upload ki wahan se karo'); return; }
+  await idbPut('meta',{key:'pimgPending', value:keys});
+  toast('Bhej raha hoon…');
+  const ok = await uploadPendingProductImages();
+  if(ok) await showMsg(lastPimgUpload.verified ? 'Drive ne '+lastPimgUpload.saved+' images save ki. Ab Drive folder dekho.' : keys.length+' images bheji gayi, par Drive ka jawab padha nahi ja saka — Drive me folder dekho.');
+  else await showMsg('Nahi gayi: '+(lastPimgUpload.error||'net ya team code check karo'));
+  renderPimgStatus();
+});
 document.getElementById('changePinBtn').addEventListener('click', async ()=>{
   const old = await askPin('Change PIN','Purana Admin PIN');
   if(old===null) return;
