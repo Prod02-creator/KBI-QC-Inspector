@@ -23,7 +23,7 @@
   --radius:10px; --shadow:0 1px 2px rgba(20,24,31,.08),0 1px 1px rgba(20,24,31,.04);
 }
 *{box-sizing:border-box}
-html,body{margin:0;padding:0}
+html,body{margin:0;padding:0;overflow-x:hidden;max-width:100vw;overscroll-behavior-x:none}
 body{font-family:'IBM Plex Sans',system-ui,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;padding-bottom:76px;-webkit-tap-highlight-color:transparent}
 .mono{font-family:'IBM Plex Mono',monospace}
 .topbar{position:sticky;top:0;z-index:30;background:var(--ink);color:#fff;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow)}
@@ -713,7 +713,23 @@ async function ensureAuth(url, o){
   }catch(e){ return false; }
 }
 
-function markDirty(){ dirty=true; renderStatus(); }
+function markDirty(){ dirty=true; renderStatus(); scheduleDraft(); }
+/* Auto-save of the unsaved form: survives an accidental swipe-back, refresh or app close. */
+let draftTimer = null;
+function scheduleDraft(){
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(async()=>{
+    try{ if(dirty && state) await idbPut('meta',{key:'draft', value:{state, reportNoLocked, requirePinOnSave, savedAt:Date.now()}}); }catch(e){}
+  }, 1200);
+}
+async function clearDraft(){ clearTimeout(draftTimer); try{ await idbDelete('meta','draft'); }catch(e){} }
+window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });
+// Back gesture / back button: while the form is unsaved, stay on the page instead of leaving it.
+try{ history.pushState({kbi:1}, ''); }catch(e){}
+window.addEventListener('popstate', ()=>{
+  if(dirty){ try{ history.pushState({kbi:1}, ''); }catch(e){} toast('Form abhi saved nahi hai — pehle Save karo'); }
+  else { history.back(); }
+});
 function renderStatus(){
   const p=document.getElementById('statusPill');
   p.textContent = dirty ? 'Unsaved' : 'Saved';
@@ -2254,7 +2270,7 @@ async function saveReport(){
   if(!state.reportNo){ state.reportNo = await nextReportNo(state.inspectionType); document.getElementById('f_reportNo').value = state.reportNo; }
   await idbPut('reports', state);
   reportNoLocked = true;
-  dirty=false; renderStatus();
+  dirty=false; renderStatus(); clearDraft();
   toast('Report saved locally');
   syncToSheet(state).catch(()=>{});
 }
@@ -2262,7 +2278,7 @@ document.getElementById('saveBtn').addEventListener('click', saveReport);
 
 document.getElementById('newBtn').addEventListener('click', async ()=>{
   if(dirty){ const ok=confirm('Unsaved changes — discard and start a new report?'); if(!ok) return; }
-  state = emptyReport();
+  state = emptyReport(); clearDraft();
   reportNoLocked = false;
   requirePinOnSave = false;
   await applyRememberedInspector();
@@ -2275,7 +2291,7 @@ document.getElementById('newBtn').addEventListener('click', async ()=>{
 async function openReport(id){
   const r = await idbGet('reports', id);
   if(!r) return;
-  state = r;
+  state = r; clearDraft();
   reportNoLocked = true;
   requirePinOnSave = true;
   loadFormFromState();
@@ -2818,8 +2834,14 @@ const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbzalaTTAB7uat
   await applyRememberedInspector();
   state.reportNo = await nextReportNo(state.inspectionType);
   bindFieldListeners();
+  let restored = false;
+  try{
+    const dr = await idbGet('meta','draft');
+    if(dr && dr.value && dr.value.state){ state = dr.value.state; reportNoLocked = !!dr.value.reportNoLocked; requirePinOnSave = !!dr.value.requirePinOnSave; restored = true; }
+  }catch(e){}
   loadFormFromState();
-  dirty = false; renderStatus();
+  dirty = restored; renderStatus();
+  if(restored) setTimeout(()=>toast('Pichla adhura form wapas aa gaya — Save karna mat bhulna'), 600);
   // Background: check the team code first (asks once if the Sheet is secured), then sync.
   (async()=>{
     try{
